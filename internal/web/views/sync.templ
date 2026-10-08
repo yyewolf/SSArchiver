@@ -1,0 +1,515 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/archiver"
+	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/card"
+	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
+	"github.com/yyewolf/ssarchiver/internal/web/components/nativeselect"
+	"github.com/yyewolf/ssarchiver/internal/web/components/progress"
+	"github.com/yyewolf/ssarchiver/internal/web/components/table"
+	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
+)
+
+type QueueRow struct {
+	Player   service.PlayerSummary
+	NextPoll time.Time
+	ETA      time.Duration
+}
+
+type SyncView struct {
+	Status       archiver.Status
+	Paused       bool
+	Queues       []QueueRow
+	PendingTotal int64
+	FailedTotal  int64
+	RatePerHour  float64
+	ETA          time.Duration
+	Now          time.Time
+}
+
+type EventsView struct {
+	Events  []*model.SyncEvent
+	Total   int64
+	Filter  service.EventFilter
+	Players []service.PlayerSummary
+	Now     time.Time
+}
+
+type FailedView struct {
+	Items []*model.Score
+	Total int64
+	Page  int
+	Pages int
+	Now   time.Time
+}
+
+func windowLabel(name string) string {
+	switch name {
+	case "short":
+		return "Last 10 seconds"
+	case "medium":
+		return "Last minute"
+	case "long":
+		return "Last hour"
+	}
+	return name
+}
+
+func etaText(d time.Duration) string {
+	if d <= 0 {
+		return "nothing queued"
+	}
+	return "about " + HumanDuration(d) + " left"
+}
+
+func plural(n int64, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return Number(n) + " " + word + "s"
+}
+
+func (v EventsView) playerName(id *string) string {
+	if id == nil {
+		return "—"
+	}
+	for _, p := range v.Players {
+		if p.ID == *id {
+			return p.Name
+		}
+	}
+	return *id
+}
+
+func EventsURL(f service.EventFilter, page int) string {
+	return fmt.Sprintf("/admin/sync/events?level=%s&kind=%s&player=%s&page=%d", f.Level, f.Kind, f.PlayerID, page)
+}
+
+templ SyncPage(p Page, v SyncView, ev EventsView, fv FailedView) {
+	@Layout(p) {
+		<div class="mb-8 flex flex-col gap-1">
+			<h1 class="text-2xl font-semibold tracking-tight">Sync</h1>
+			<p class="text-sm text-muted-foreground">What the archiver is doing right now. Refreshes every few seconds.</p>
+		</div>
+		@SyncLive(v)
+		<section class="mt-10 flex flex-col gap-4">
+			<h2 class="text-lg font-semibold tracking-tight">Activity</h2>
+			@eventFilters(ev)
+			@EventsTable(ev)
+		</section>
+		<section class="mt-10 flex flex-col gap-4">
+			<h2 class="text-lg font-semibold tracking-tight">Failed replays</h2>
+			@FailedTable(fv)
+		</section>
+	}
+}
+
+templ SyncLive(v SyncView) {
+	<div id="sync-live" hx-get="/admin/sync/live" hx-trigger="every 3s" hx-swap="outerHTML" class="flex flex-col gap-6">
+		<div class="grid gap-6 lg:grid-cols-2">
+			@workerCard(v)
+			@budgetCard(v)
+		</div>
+		@queueCard(v)
+	</div>
+}
+
+templ SyncLiveToast(v SyncView, title string) {
+	@SyncLive(v)
+	@ToastOOB(toast.TypeSuccess, title, "")
+}
+
+templ StateBadge(s archiver.State) {
+	switch s {
+		case archiver.StateRunning:
+			@badge.Badge() {
+				Running
+			}
+		case archiver.StatePaused:
+			@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+				Paused
+			}
+		case archiver.StateRateLimited:
+			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				Rate limited
+			}
+		case archiver.StateStopped:
+			@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+				Stopped
+			}
+		default:
+			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				Idle
+			}
+	}
+}
+
+templ workerCard(v SyncView) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Worker
+			}
+			@card.Description() {
+				Polls players, walks their history and downloads replays.
+			}
+			@card.Action() {
+				if v.Paused {
+					@button.Button(button.Props{Size: button.SizeSm, Attributes: templ.Attributes{"hx-post": "/admin/sync/resume", "hx-target": "#sync-live", "hx-swap": "outerHTML"}}) {
+						@icon.Play()
+						Resume
+					}
+				} else {
+					@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"hx-post": "/admin/sync/pause", "hx-target": "#sync-live", "hx-swap": "outerHTML"}}) {
+						@icon.Pause()
+						Pause
+					}
+				}
+			}
+		}
+		@card.Content() {
+			<div class="flex flex-col gap-3 text-sm">
+				<div class="flex items-center gap-2">
+					@StateBadge(v.Status.State)
+					<span class="text-muted-foreground">since { TimeAgo(v.Status.Since, v.Now) }</span>
+				</div>
+				if v.Status.Task != "" {
+					<p class="truncate">{ v.Status.Task }</p>
+				}
+				if !v.Status.Limiter.BlockedUntil.IsZero() {
+					<p class="text-muted-foreground">ScoreSaber asked us to wait; resuming { Until(v.Status.Limiter.BlockedUntil, time.Now()) }.</p>
+				}
+				<p class="text-muted-foreground">
+					{ plural(v.PendingTotal, "replay") } pending · { fmt.Sprintf("~%.0f replays/hour", v.RatePerHour) } · { etaText(v.ETA) }
+				</p>
+			</div>
+		}
+	}
+}
+
+templ budgetCard(v SyncView) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				ScoreSaber budget
+			}
+			@card.Description() {
+				Requests sent by this instance in each ScoreSaber rate-limit window.
+			}
+		}
+		@card.Content() {
+			<div class="flex flex-col gap-4">
+				for _, w := range v.Status.Limiter.Windows {
+					<div class="flex flex-col gap-1.5">
+						<div class="flex justify-between text-sm">
+							<span>{ windowLabel(w.Name) }</span>
+							<span class="tabular-nums text-muted-foreground">{ strconv.Itoa(w.Used) } / { strconv.Itoa(w.Limit) }</span>
+						</div>
+						@progress.Progress(progress.Props{Value: w.Used, Max: max(w.Limit, 1)})
+						if w.ServerRemaining >= 0 {
+							<p class="text-xs text-muted-foreground">ScoreSaber reports { strconv.Itoa(w.ServerRemaining) } remaining</p>
+						}
+					</div>
+				}
+				if len(v.Status.Limiter.Windows) == 0 {
+					<p class="text-sm text-muted-foreground">No requests sent yet.</p>
+				}
+			</div>
+		}
+	}
+}
+
+templ queueCard(v SyncView) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				Queue
+			}
+			@card.Description() {
+				Per-player progress. Estimates assume the current budget and poll interval.
+			}
+		}
+		@card.Content() {
+			if len(v.Queues) == 0 {
+				<p class="text-sm text-muted-foreground">No tracked players.</p>
+			} else {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								Player
+							}
+							@table.Head() {
+								Next poll
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								History
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Archived
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Pending
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								Failed
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								Pruned
+							}
+							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+								ETA
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, q := range v.Queues {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "font-medium"}) {
+									{ q.Player.Name }
+									if !q.Player.Enabled {
+										<span class="ml-1 text-xs text-muted-foreground">(disabled)</span>
+									}
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
+									if q.Player.Enabled {
+										{ Until(q.NextPoll, v.Now) }
+									} else {
+										—
+									}
+								}
+								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+									{ backfillLabel(q.Player.Player) }
+								}
+								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+									{ Number(q.Player.Counts.Archived) }
+								}
+								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+									{ Number(q.Player.Counts.Pending) }
+								}
+								@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums sm:table-cell"}) {
+									{ Number(q.Player.Counts.Failed) }
+								}
+								@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums sm:table-cell"}) {
+									{ Number(q.Player.Counts.Gone) }
+								}
+								@table.Cell(table.CellProps{Class: "hidden text-muted-foreground lg:table-cell"}) {
+									if q.ETA > 0 {
+										{ HumanDuration(q.ETA) }
+									} else {
+										—
+									}
+								}
+								@table.Cell(table.CellProps{Class: "text-right"}) {
+									@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: templ.Attributes{"hx-post": "/admin/players/" + q.Player.ID + "/poll", "hx-swap": "none", "aria-label": "Poll now", "title": "Poll now"}}) {
+										@icon.RefreshCw()
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+templ eventFilters(ev EventsView) {
+	<form id="event-filters" class="flex flex-wrap gap-2" hx-get="/admin/sync/events" hx-target="#sync-events" hx-swap="outerHTML" hx-trigger="change">
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "level", Attributes: templ.Attributes{"aria-label": "Level"}}) {
+			for _, o := range []string{"", model.LevelInfo, model.LevelWarn, model.LevelError} {
+				@nativeselect.Option(nativeselect.OptionProps{Value: o, Selected: ev.Filter.Level == o}) {
+					if o == "" {
+						All levels
+					} else {
+						{ o }
+					}
+				}
+			}
+		}
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "kind", Attributes: templ.Attributes{"aria-label": "Kind"}}) {
+			for _, o := range []string{"", model.KindPoll, model.KindScores, model.KindReplay, model.KindBackfill, model.KindRateLimit, model.KindWorker} {
+				@nativeselect.Option(nativeselect.OptionProps{Value: o, Selected: ev.Filter.Kind == o}) {
+					if o == "" {
+						All kinds
+					} else {
+						{ o }
+					}
+				}
+			}
+		}
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "player", Attributes: templ.Attributes{"aria-label": "Player"}}) {
+			@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: ev.Filter.PlayerID == ""}) {
+				All players
+			}
+			for _, p := range ev.Players {
+				@nativeselect.Option(nativeselect.OptionProps{Value: p.ID, Selected: ev.Filter.PlayerID == p.ID}) {
+					{ p.Name }
+				}
+			}
+		}
+	</form>
+}
+
+templ levelBadge(level string) {
+	switch level {
+		case model.LevelError:
+			@badge.Badge(badge.Props{Variant: badge.VariantDestructive}) {
+				error
+			}
+		case model.LevelWarn:
+			@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+				warn
+			}
+		default:
+			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				info
+			}
+	}
+}
+
+templ EventsTable(ev EventsView) {
+	<div id="sync-events">
+		if len(ev.Events) == 0 {
+			<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No events.</p>
+		} else {
+			<div class="rounded-lg border">
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								When
+							}
+							@table.Head() {
+								Level
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Kind
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Player
+							}
+							@table.Head() {
+								Message
+							}
+						}
+					}
+					@table.Body() {
+						for _, e := range ev.Events {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "whitespace-nowrap text-muted-foreground", Attributes: templ.Attributes{"title": e.At.Format(time.RFC3339)}}) {
+									{ TimeAgo(e.At, ev.Now) }
+								}
+								@table.Cell() {
+									@levelBadge(e.Level)
+								}
+								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+									{ e.Kind }
+								}
+								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+									{ ev.playerName(e.PlayerID) }
+								}
+								@table.Cell(table.CellProps{Class: "max-w-md whitespace-normal break-words"}) {
+									{ e.Message }
+								}
+							}
+						}
+					}
+				}
+			</div>
+			{{ pages := int((ev.Total + int64(max(ev.Filter.PerPage, 1)) - 1) / int64(max(ev.Filter.PerPage, 1))) }}
+			if pages > 1 {
+				<div class="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+					<span>Page { strconv.Itoa(ev.Filter.Page) } of { strconv.Itoa(pages) }</span>
+					<div class="flex gap-2">
+						if ev.Filter.Page > 1 {
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"hx-get": EventsURL(ev.Filter, ev.Filter.Page-1), "hx-target": "#sync-events", "hx-swap": "outerHTML"}}) {
+								Newer
+							}
+						}
+						if ev.Filter.Page < pages {
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"hx-get": EventsURL(ev.Filter, ev.Filter.Page+1), "hx-target": "#sync-events", "hx-swap": "outerHTML"}}) {
+								Older
+							}
+						}
+					</div>
+				</div>
+			}
+		}
+	</div>
+}
+
+templ FailedTable(fv FailedView) {
+	<div id="failed-replays">
+		if fv.Total == 0 {
+			<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No failed replays.</p>
+		} else {
+			<div class="mb-3 flex items-center justify-between">
+				<span class="text-sm text-muted-foreground">{ plural(fv.Total, "replay") } gave up after { strconv.Itoa(service.MaxReplayAttempts) } attempts</span>
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"hx-post": "/admin/sync/retry", "hx-target": "#failed-replays", "hx-swap": "outerHTML"}}) {
+					@icon.RefreshCw()
+					Retry all
+				}
+			</div>
+			<div class="rounded-lg border">
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								Replay
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Last error
+							}
+							@table.Head(table.HeadProps{Class: "hidden sm:table-cell"}) {
+								Set
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, s := range fv.Items {
+							@table.Row() {
+								@table.Cell() {
+									<a href={ templ.SafeURL(ScoreURL(s.ID)) } class="underline-offset-4 hover:underline">
+										<span class="block font-medium">{ SongTitle(s) }</span>
+										<span class="block text-xs text-muted-foreground">{ PlayerName(s) } · #{ strconv.FormatInt(s.ID, 10) }</span>
+									</a>
+								}
+								@table.Cell(table.CellProps{Class: "hidden max-w-sm whitespace-normal break-words text-xs text-muted-foreground md:table-cell"}) {
+									{ s.LastError }
+								}
+								@table.Cell(table.CellProps{Class: "hidden text-muted-foreground sm:table-cell"}) {
+									{ TimeAgo(s.SetAt, fv.Now) }
+								}
+								@table.Cell(table.CellProps{Class: "text-right"}) {
+									@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Attributes: templ.Attributes{"hx-post": "/admin/sync/retry", "hx-vals": fmt.Sprintf(`{"score_id":"%d"}`, s.ID), "hx-target": "#failed-replays", "hx-swap": "outerHTML"}}) {
+										Retry
+									}
+								}
+							}
+						}
+					}
+				}
+			</div>
+		}
+	</div>
+}
+
+templ FailedRetried(fv FailedView, n int64) {
+	@FailedTable(fv)
+	@ToastOOB(toast.TypeSuccess, "Re-queued "+plural(n, "replay"), "")
+}
