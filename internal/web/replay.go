@@ -8,6 +8,7 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
 )
 
@@ -73,6 +74,10 @@ func (h *Handler) embed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	src := views.ViewerSrc(httpx.BaseURLFrom(r.Context()), id, q.Get("autoplay") == "1", q.Get("loop") == "1", q.Get("ui") == "0")
+	st, err := h.svc.Settings(r.Context())
+	if err != nil {
+		st = service.DefaultSettings
+	}
+	src := views.ViewerSrc(httpx.BaseURLFrom(r.Context()), id, q.Get("autoplay") == "1", q.Get("loop") == "1", q.Get("ui") == "0", st)
 	render(w, r, http.StatusOK, views.Embed(views.SongTitle(sc)+" · "+views.PlayerName(sc), src))
 }

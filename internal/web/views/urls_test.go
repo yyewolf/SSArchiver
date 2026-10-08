@@ -15,12 +15,28 @@ func TestURLs(t *testing.T) {
 	if got := PlayerScoresURL("1001", service.ScoreFilter{}, 1); got != "/p/1001" {
 		t.Errorf("PlayerScoresURL(empty) = %s", got)
 	}
-	src := ViewerSrc("https://r.example.com", 42, true, false, true)
+	src := ViewerSrc("https://r.example.com", 42, true, false, true, service.DefaultSettings)
 	if src != "/viewer/?autoPlay=true&noProxy=true&replayURL=https%3A%2F%2Fr.example.com%2Fr%2F42.dat&uiOff=true" {
 		t.Errorf("ViewerSrc = %s", src)
 	}
 	if got := EmbedSnippet("https://r.example.com/embed/42"); got != `<iframe src="https://r.example.com/embed/42" width="960" height="540" allow="fullscreen" loading="lazy" style="border:0"></iframe>` {
 		t.Errorf("EmbedSnippet = %s", got)
+	}
+}
+
+func TestViewerSrcHeadsetOverride(t *testing.T) {
+	st := service.DefaultSettings
+	st.ViewerShowHeadset = true
+	st.ViewerHeadsetColor = "#Ff0080"
+	st.ViewerHeadsetAlpha = 0.4
+	src := ViewerSrc("https://r.example.com", 42, false, false, false, st)
+	want := "/viewer/?noProxy=true&replayURL=https%3A%2F%2Fr.example.com%2Fr%2F42.dat" +
+		"&settingsOverride=%7B%22Bools%22%3A%7B%22showheadset%22%3Atrue%7D%2C%22Ints%22%3A%7B%7D%2C%22Floats%22%3A%7B%22headsetalpha%22%3A0.4%2C%22headsetcolor.b%22%3A0.502%2C%22headsetcolor.g%22%3A0%2C%22headsetcolor.r%22%3A1%7D%7D"
+	if src != want {
+		t.Errorf("ViewerSrc = %s, want %s", src, want)
+	}
+	if got := ViewerSrc("https://r.example.com", 42, false, false, false, service.DefaultSettings); got != "/viewer/?noProxy=true&replayURL=https%3A%2F%2Fr.example.com%2Fr%2F42.dat" {
+		t.Errorf("ViewerSrc(default) = %s", got)
 	}
 }
 

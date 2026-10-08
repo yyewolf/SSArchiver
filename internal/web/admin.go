@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -182,6 +183,35 @@ func (h *Handler) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	render(w, r, http.StatusOK, views.GeneralSettingsSaved(v))
+}
+
+func (h *Handler) saveViewerSettings(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	st, err := h.svc.Settings(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	st.ViewerShowHeadset = r.PostFormValue("show_headset") == "on"
+	st.ViewerHeadsetColor = r.PostFormValue("headset_color")
+	if a, err := strconv.ParseFloat(r.PostFormValue("headset_alpha"), 64); err == nil {
+		st.ViewerHeadsetAlpha = a
+	} else {
+		st.ViewerHeadsetAlpha = -1
+	}
+	v := views.SettingsView{Settings: st, Intervals: service.PollIntervals}
+	if err := h.svc.UpdateViewerSettings(r.Context(), st); err != nil {
+		if !errors.Is(err, service.ErrInvalidSettings) {
+			h.serverError(w, r, err)
+			return
+		}
+		v.Error = sentence(errors.New(strings.TrimPrefix(err.Error(), service.ErrInvalidSettings.Error()+": ")))
+		render(w, r, http.StatusOK, views.ViewerSettings(v))
+		return
+	}
+	render(w, r, http.StatusOK, views.ViewerSettingsSaved(v))
 }
 
 func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {

@@ -1,12 +1,14 @@
 package web_test
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
+	"github.com/yyewolf/ssarchiver/internal/service"
 )
 
 const replayBody = "ScoreSaber Replay bytes"
@@ -59,6 +61,30 @@ func TestReplayNotServed(t *testing.T) {
 	}
 	if rec := e.do(http.MethodGet, "/r/1.dat", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing file = %d, want 404", rec.Code)
+	}
+}
+
+func TestEmbedViewerSettings(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.seed()
+	ctx := context.Background()
+	st, _ := e.svc.Settings(ctx)
+	st.ViewerShowHeadset = true
+	st.ViewerHeadsetColor = "#ff0080"
+	if err := e.svc.UpdateViewerSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	rec := e.do(http.MethodGet, "/embed/1", nil)
+	if rec.Code != 200 {
+		t.Fatalf("embed = %d", rec.Code)
+	}
+	contains(t, rec.Body.String(), "settingsOverride=%7B%22Bools%22%3A%7B%22showheadset%22%3Atrue%7D")
+	if err := e.svc.UpdateViewerSettings(ctx, service.DefaultSettings); err != nil {
+		t.Fatal(err)
+	}
+	if plain := e.do(http.MethodGet, "/embed/1", nil).Body.String(); strings.Contains(plain, "settingsOverride") {
+		t.Fatal("settingsOverride must be absent when headset rendering is disabled")
 	}
 }
 

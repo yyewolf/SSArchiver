@@ -1,7 +1,9 @@
 package views
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -36,7 +38,10 @@ func EmbedSnippet(embedURL string) string {
 }
 
 // ViewerSrc is the same-origin ArcViewer URL that loads one archived replay.
-func ViewerSrc(base string, id int64, autoplay, loop, hideUI bool) string {
+// When the instance enables headset rendering, ArcViewer's settingsOverride
+// parameter applies the admin's choices over each visitor's own viewer
+// settings (the visitor can still veto them inside the viewer UI).
+func ViewerSrc(base string, id int64, autoplay, loop, hideUI bool, st service.Settings) string {
 	v := url.Values{}
 	v.Set("replayURL", base+ReplayPath(id))
 	v.Set("noProxy", "true")
@@ -48,6 +53,33 @@ func ViewerSrc(base string, id int64, autoplay, loop, hideUI bool) string {
 	}
 	if hideUI {
 		v.Set("uiOff", "true")
+	}
+	if st.ViewerShowHeadset {
+		r, g, b, ok := service.ParseHexColor(st.ViewerHeadsetColor)
+		if !ok {
+			r, g, b = 0.529, 0.529, 0.529
+		}
+		round := func(f float64) float64 { return math.Round(f*1000) / 1000 }
+		override := struct {
+			Bools  map[string]bool    `json:"Bools"`
+			Ints   map[string]int     `json:"Ints"`
+			Floats map[string]float64 `json:"Floats"`
+		}{
+			// All three dictionaries must be present (empty is fine):
+			// Newtonsoft leaves omitted ones null and ArcViewer dereferences
+			// them when overrides are active.
+			Bools: map[string]bool{"showheadset": true},
+			Ints:  map[string]int{},
+			Floats: map[string]float64{
+				"headsetalpha":   round(st.ViewerHeadsetAlpha),
+				"headsetcolor.r": round(r),
+				"headsetcolor.g": round(g),
+				"headsetcolor.b": round(b),
+			},
+		}
+		if data, err := json.Marshal(override); err == nil {
+			v.Set("settingsOverride", string(data))
+		}
 	}
 	return "/viewer/?" + v.Encode()
 }

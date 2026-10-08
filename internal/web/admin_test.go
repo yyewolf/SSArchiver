@@ -111,3 +111,29 @@ func TestSettings(t *testing.T) {
 		t.Fatal("new password not active")
 	}
 }
+
+func TestViewerSettingsCard(t *testing.T) {
+	e := newEnv(t)
+	c := e.login()
+	ctx := context.Background()
+	contains(t, e.do(http.MethodGet, "/admin/settings", nil, withCookie(c)).Body.String(), "Replay viewer", "Show headset", "Headset color", "Headset opacity")
+
+	bad := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"show_headset": {"on"}, "headset_color": {"ff0080"}, "headset_alpha": {"0.5"}}, withCookie(c), htmx("settings-viewer"))
+	contains(t, bad.Body.String(), `id="settings-viewer"`, "Headset color must be a hex color like #878787")
+
+	badAlpha := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"headset_color": {"#ff0080"}, "headset_alpha": {"2"}}, withCookie(c), htmx("settings-viewer"))
+	contains(t, badAlpha.Body.String(), `id="settings-viewer"`, "Headset opacity must be between 0 and 1")
+
+	ok := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"show_headset": {"on"}, "headset_color": {"#Ff0080"}, "headset_alpha": {"0.5"}}, withCookie(c), htmx("settings-viewer"))
+	contains(t, ok.Body.String(), "Viewer settings saved")
+	if st, _ := e.svc.Settings(ctx); !st.ViewerShowHeadset || st.ViewerHeadsetColor != "#ff0080" || st.ViewerHeadsetAlpha != 0.5 {
+		t.Fatalf("viewer settings = %+v", st)
+	}
+
+	// Saving general settings must not reset the viewer card.
+	general := e.do(http.MethodPost, "/admin/settings", url.Values{"title": {"Oermer replays"}, "poll_interval": {"15m0s"}}, withCookie(c), htmx("settings-general"))
+	contains(t, general.Body.String(), "Settings saved")
+	if st, _ := e.svc.Settings(ctx); !st.ViewerShowHeadset || st.ViewerHeadsetColor != "#ff0080" {
+		t.Fatalf("general save reset viewer settings: %+v", st)
+	}
+}

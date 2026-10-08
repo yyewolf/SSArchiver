@@ -78,6 +78,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/players/{id}/delete", h.requireAdmin(h.deletePlayer))
 	mux.HandleFunc("GET /admin/settings", h.requireAdmin(h.settingsPage))
 	mux.HandleFunc("POST /admin/settings", h.requireAdmin(h.saveSettings))
+	mux.HandleFunc("POST /admin/settings/viewer", h.requireAdmin(h.saveViewerSettings))
 	mux.HandleFunc("POST /admin/password", h.requireAdmin(h.changePassword))
 }
 
