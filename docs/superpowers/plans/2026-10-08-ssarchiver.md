@@ -66,7 +66,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 |---|------|--------|-------|---------|--------|
 | 1 | Project bootstrap (go.mod, cobra, config, lint, Makefile) | ✅ done | kilo (euria-code) | 2026-10-08 | 7bab24d |
 | 2 | Models, SQLite, gorm gen | ✅ done | kilo (euria-code) | 2026-10-08 | 6a44ea8 |
-| 3 | ScoreSaber rate limiter | ⬜ todo | | | |
+| 3 | ScoreSaber rate limiter | ✅ done | kilo (euria-code) | 2026-10-08 | 3f13084 |
 | 4 | ScoreSaber client | ⬜ todo | | | |
 | 5 | Replay blob storage | ⬜ todo | | | |
 | 6 | Service: players, scores, replay queue, events log | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 2 done (commit 6a44ea8)
-_Next step:_ Task 3 Step 1 (ScoreSaber rate limiter tests)
+_Current task:_ Task 3 done (commit 3f13084)
+_Next step:_ Task 4 Step 1 (ScoreSaber client fixtures)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's transitives were bumped (dbresolver 1.6.2, x/tools 0.51.0) to compile under gorm v1.31.2 + Go 1.27 — see Deviations log. Generated query pkg committed.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's transitives were bumped (dbresolver 1.6.2, x/tools 0.51.0) to compile under gorm v1.31.2 + Go 1.27 — see Deviations log. Limiter tests use testing/synctest (works on go 1.27).
 
 ### Deviations log
 
@@ -112,6 +112,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's tra
 | 2026-10-08 | 2 | `go test ./internal/db/...` | ok (pragmas, preload, cascade, IsDuplicate) |
 | 2026-10-08 | 2 | `golangci-lint fmt` + `make lint` | 0 issues. (gofumpt field alignment in model.go) |
 | 2026-10-08 | 2 | `go build ./... && go test ./...` | all ok |
+| 2026-10-08 | 3 | `go test ./internal/scoresaber/...` (pre-impl) | FAIL: undefined: NewLimiter (expected) |
+| 2026-10-08 | 3 | `go test -race ./internal/scoresaber/...` | ok |
+| 2026-10-08 | 3 | `go build ./... && go test ./... && make lint` | all ok, 0 issues. |
 
 ---
 
@@ -1066,7 +1069,7 @@ Behaviour (spec §6.1): three sliding windows `short` 20/10 s, `medium` 60/60 s,
 
 Tests use `testing/synctest` (Go 1.25+): inside the bubble `time.Now`, timers and `context.WithTimeout` use a fake clock that jumps forward when all goroutines are blocked, so `time.Since(start)` measures exactly how long `Wait` blocked.
 
-- [ ] **Step 1: Write the failing tests** — `internal/scoresaber/limiter_test.go`
+- [x] **Step 1: Write the failing tests** — `internal/scoresaber/limiter_test.go`
 
 ```go
 package scoresaber
@@ -1238,12 +1241,12 @@ func TestSnapshot(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/scoresaber/...`
 Expected: FAIL — `undefined: NewLimiter`.
 
-- [ ] **Step 3: Implement** — `internal/scoresaber/limiter.go`
+- [x] **Step 3: Implement** — `internal/scoresaber/limiter.go`
 
 ```go
 // Package scoresaber is a minimal client for ScoreSaber's public v2 API with
@@ -1409,12 +1412,12 @@ func resetTime(now time.Time, v int64) time.Time {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `go test -race ./internal/scoresaber/...`
 Expected: `ok`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 make lint
