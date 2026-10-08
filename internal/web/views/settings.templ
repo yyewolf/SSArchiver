@@ -1,0 +1,129 @@
+package views
+
+import (
+	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/card"
+	"github.com/yyewolf/ssarchiver/internal/web/components/field"
+	"github.com/yyewolf/ssarchiver/internal/web/components/input"
+	"github.com/yyewolf/ssarchiver/internal/web/components/nativeselect"
+	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
+)
+
+type SettingsView struct {
+	Settings  service.Settings
+	Intervals []time.Duration
+	Error     string
+}
+
+type PasswordView struct {
+	Error string
+}
+
+templ SettingsPage(p Page, v SettingsView) {
+	@Layout(p) {
+		<div class="mb-8 flex flex-col gap-1">
+			<h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
+		</div>
+		<div class="grid gap-6 lg:grid-cols-2">
+			@GeneralSettings(v)
+			@PasswordSettings(PasswordView{})
+		</div>
+	}
+}
+
+templ GeneralSettings(v SettingsView) {
+	<div id="settings-general">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					General
+				}
+				@card.Description() {
+					How this archive is named and how often players are polled.
+				}
+			}
+			@card.Content() {
+				<form hx-post="/admin/settings" hx-target="#settings-general" hx-swap="outerHTML" class="flex flex-col gap-4">
+					@FormError(v.Error)
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "title"}) {
+							Instance title
+						}
+						@input.Input(input.Props{ID: "title", Name: "title", Value: v.Settings.InstanceTitle, Required: true})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "poll_interval"}) {
+							Poll every
+						}
+						@nativeselect.NativeSelect(nativeselect.Props{ID: "poll_interval", Name: "poll_interval"}) {
+							for _, d := range v.Intervals {
+								@nativeselect.Option(nativeselect.OptionProps{Value: d.String(), Selected: d == v.Settings.PollInterval}) {
+									{ HumanDuration(d) }
+								}
+							}
+						}
+						@field.Description() {
+							Each poll costs one ScoreSaber request per player; the rest of the hourly budget goes to replays.
+						}
+					}
+					<div>
+						@button.Button(button.Props{Type: button.TypeSubmit}) {
+							Save
+						}
+					</div>
+				</form>
+			}
+		}
+	</div>
+}
+
+templ GeneralSettingsSaved(v SettingsView) {
+	@GeneralSettings(v)
+	@ToastOOB(toast.TypeSuccess, "Settings saved", "")
+}
+
+templ PasswordSettings(v PasswordView) {
+	<div id="settings-password">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Change password
+				}
+				@card.Description() {
+					You will be logged out everywhere.
+				}
+			}
+			@card.Content() {
+				<form hx-post="/admin/password" hx-target="#settings-password" hx-swap="outerHTML" class="flex flex-col gap-4">
+					@FormError(v.Error)
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "current"}) {
+							Current password
+						}
+						@input.Input(input.Props{ID: "current", Name: "current", Type: "password", Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "new"}) {
+							New password
+						}
+						@input.Input(input.Props{ID: "new", Name: "new", Type: "password", Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "10"}})
+					}
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "confirm"}) {
+							Confirm new password
+						}
+						@input.Input(input.Props{ID: "confirm", Name: "confirm", Type: "password", Required: true, Attributes: templ.Attributes{"autocomplete": "new-password"}})
+					}
+					<div>
+						@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantSecondary}) {
+							Change password
+						}
+					</div>
+				</form>
+			}
+		}
+	</div>
+}

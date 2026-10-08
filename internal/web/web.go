@@ -63,6 +63,15 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /r/{file}", h.replayFile)
 	mux.HandleFunc("OPTIONS /r/{file}", h.replayPreflight)
 	mux.HandleFunc("GET /embed/{id}", h.embed)
+	mux.HandleFunc("GET /admin", h.requireAdmin(h.adminPlayers))
+	mux.HandleFunc("POST /admin/players/lookup", h.requireAdmin(h.lookupPlayer))
+	mux.HandleFunc("POST /admin/players", h.requireAdmin(h.addPlayer))
+	mux.HandleFunc("POST /admin/players/{id}/enabled", h.requireAdmin(h.setPlayerEnabled))
+	mux.HandleFunc("POST /admin/players/{id}/poll", h.requireAdmin(h.pollPlayer))
+	mux.HandleFunc("POST /admin/players/{id}/delete", h.requireAdmin(h.deletePlayer))
+	mux.HandleFunc("GET /admin/settings", h.requireAdmin(h.settingsPage))
+	mux.HandleFunc("POST /admin/settings", h.requireAdmin(h.saveSettings))
+	mux.HandleFunc("POST /admin/password", h.requireAdmin(h.changePassword))
 }
 
 // Middleware wraps the whole mux (UI and API).

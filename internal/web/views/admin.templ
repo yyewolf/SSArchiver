@@ -1,0 +1,230 @@
+package views
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/web/components/avatar"
+	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/card"
+	"github.com/yyewolf/ssarchiver/internal/web/components/empty"
+	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
+	"github.com/yyewolf/ssarchiver/internal/web/components/input"
+	"github.com/yyewolf/ssarchiver/internal/web/components/table"
+	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
+)
+
+type AdminPlayersView struct {
+	Players []service.PlayerSummary
+	Now     time.Time
+}
+
+func lastPoll(p model.Player, now time.Time) string {
+	if p.LastPolledAt == nil {
+		return "never"
+	}
+	return TimeAgo(*p.LastPolledAt, now)
+}
+
+func backfillLabel(p model.Player) string {
+	switch p.BackfillState {
+	case model.BackfillDone:
+		return "Complete"
+	case model.BackfillRunning:
+		return "Page " + strconv.Itoa(p.BackfillPage) + " of " + strconv.Itoa(max(p.BackfillTotalPages, p.BackfillPage))
+	}
+	return "Waiting"
+}
+
+templ AdminPlayersPage(p Page, v AdminPlayersView) {
+	@Layout(p) {
+		<div class="mb-8 flex flex-col gap-1">
+			<h1 class="text-2xl font-semibold tracking-tight">Manage players</h1>
+			<p class="text-sm text-muted-foreground">Tracked players are polled regularly and their full replay history is archived.</p>
+		</div>
+		@card.Card(card.Props{Class: "mb-8"}) {
+			@card.Header() {
+				@card.Title() {
+					Add a player
+				}
+				@card.Description() {
+					Paste a ScoreSaber profile URL or a player ID.
+				}
+			}
+			@card.Content() {
+				<form hx-post="/admin/players/lookup" hx-target="#lookup-result" hx-swap="innerHTML" class="flex flex-col gap-2 sm:flex-row">
+					@input.Input(input.Props{Name: "ref", Placeholder: "https://scoresaber.com/u/76561198…", Required: true, Class: "sm:flex-1", Attributes: templ.Attributes{"aria-label": "ScoreSaber profile URL or player ID"}})
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantSecondary}) {
+						@icon.Search()
+						Look up
+					}
+				</form>
+				<div id="lookup-result" class="mt-4 empty:hidden"></div>
+			}
+		}
+		@AdminPlayersTable(v)
+	}
+}
+
+templ PlayerPreview(sp scoresaber.Player, tracked bool) {
+	<div class="flex items-center gap-3 rounded-lg border p-3">
+		@avatar.Avatar() {
+			@avatar.Image(avatar.ImageProps{Src: sp.Avatar, Alt: sp.Name})
+			@avatar.Fallback() {
+				{ Initials(sp.Name) }
+			}
+		}
+		<div class="min-w-0 flex-1">
+			<p class="truncate font-medium">{ sp.Name }</p>
+			<p class="font-mono text-xs text-muted-foreground">{ sp.ID } · { sp.Country }</p>
+		</div>
+		if tracked {
+			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				Already tracked
+			}
+		} else {
+			<form hx-post="/admin/players" hx-target="#admin-players" hx-swap="outerHTML">
+				<input type="hidden" name="ref" value={ sp.ID }/>
+				@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm}) {
+					@icon.Plus()
+					Track player
+				}
+			</form>
+		}
+	</div>
+}
+
+templ AdminPlayersTable(v AdminPlayersView) {
+	<div id="admin-players">
+		if len(v.Players) == 0 {
+			@empty.Empty(empty.Props{Class: "border border-dashed"}) {
+				@empty.Header() {
+					@empty.Title() {
+						No tracked players
+					}
+					@empty.Description() {
+						Look a player up above to start archiving their replays.
+					}
+				}
+			}
+		} else {
+			<div class="rounded-lg border">
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								Player
+							}
+							@table.Head() {
+								Status
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								History
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Replays
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Last poll
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								<span class="sr-only">Actions</span>
+							}
+						}
+					}
+					@table.Body() {
+						for _, pl := range v.Players {
+							@AdminPlayerRow(pl, v.Now)
+						}
+					}
+				}
+			</div>
+		}
+	</div>
+}
+
+templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
+	@table.Row(table.RowProps{ID: "player-" + pl.ID}) {
+		@table.Cell() {
+			<a href={ templ.SafeURL("/p/" + pl.ID) } class="flex items-center gap-2 underline-offset-4 hover:underline">
+				@avatar.Avatar(avatar.Props{Class: "size-8"}) {
+					@avatar.Image(avatar.ImageProps{Src: pl.AvatarURL, Alt: pl.Name})
+					@avatar.Fallback() {
+						{ Initials(pl.Name) }
+					}
+				}
+				<span class="font-medium">{ pl.Name }</span>
+			</a>
+		}
+		@table.Cell() {
+			if pl.Enabled {
+				@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+					Enabled
+				}
+			} else {
+				@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+					Disabled
+				}
+			}
+			if pl.LastError != "" {
+				<p class="mt-1 max-w-56 truncate text-xs text-destructive" title={ pl.LastError }>{ pl.LastError }</p>
+			}
+		}
+		@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+			{ backfillLabel(pl.Player) }
+		}
+		@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+			{ Number(pl.Counts.Archived) } / { Number(pl.Counts.Replays()) }
+		}
+		@table.Cell(table.CellProps{Class: "hidden text-muted-foreground md:table-cell"}) {
+			{ lastPoll(pl.Player, now) }
+		}
+		@table.Cell(table.CellProps{Class: "text-right"}) {
+			<div class="flex items-center justify-end gap-1">
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: templ.Attributes{"hx-post": "/admin/players/" + pl.ID + "/poll", "hx-swap": "none", "aria-label": "Poll now", "title": "Poll now"}}) {
+					@icon.RefreshCw()
+				}
+				<form hx-post={ "/admin/players/" + pl.ID + "/enabled" } hx-target={ "#player-" + pl.ID } hx-swap="outerHTML">
+					<input type="hidden" name="enabled" value={ strconv.FormatBool(!pl.Enabled) }/>
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: templ.Attributes{"aria-label": "Toggle tracking", "title": "Pause or resume tracking"}}) {
+						if pl.Enabled {
+							@icon.Pause()
+						} else {
+							@icon.Play()
+						}
+					}
+				</form>
+				<form
+					hx-post={ "/admin/players/" + pl.ID + "/delete" }
+					hx-target={ "#player-" + pl.ID }
+					hx-swap="outerHTML"
+					hx-confirm={ "Stop tracking " + pl.Name + "? Their scores are removed from the archive." }
+					class="flex items-center gap-1"
+				>
+					<label class="flex items-center gap-1 text-xs text-muted-foreground" title="Also delete replay files from disk">
+						<input type="checkbox" name="delete_files" class="size-3.5 accent-primary"/>
+						files
+					</label>
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, Size: button.SizeIconSm, Class: "text-destructive", Attributes: templ.Attributes{"aria-label": "Delete player", "title": "Delete player"}}) {
+						@icon.Trash2()
+					}
+				</form>
+			</div>
+		}
+	}
+}
+
+templ PlayerAdded(v AdminPlayersView, name string) {
+	@AdminPlayersTable(v)
+	<div id="lookup-result" hx-swap-oob="innerHTML"></div>
+	@ToastOOB(toast.TypeSuccess, "Now tracking "+name, "Their history is being archived in the background.")
+}
+
+templ PlayerRowToast(pl service.PlayerSummary, now time.Time, title string) {
+	@AdminPlayerRow(pl, now)
+	@ToastOOB(toast.TypeSuccess, title, pl.Name)
+}
