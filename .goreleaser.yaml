@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: ssarchiver
+
+before:
+  hooks:
+    - go mod download
+    - go generate ./internal/viewer
+    - test -f internal/viewer/dist/index.html.gz
+
+builds:
+  - id: ssarchiver
+    main: ./cmd/ssarchiver
+    binary: ssarchiver
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/yyewolf/ssarchiver/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/yyewolf/ssarchiver/internal/buildinfo.Commit={{ .FullCommit }}
+      - -X github.com/yyewolf/ssarchiver/internal/buildinfo.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md, THIRD_PARTY_NOTICES.md]
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--bundle=${signature}", "${artifact}", "--yes"]
+
+dockers_v2:
+  - id: image
+    ids: [ssarchiver]
+    images: ["ghcr.io/yyewolf/ssarchiver"]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    platforms: [linux/amd64, linux/arm64]
+    extra_files: [docker/data/.keep]
+    sbom: true
+    labels:
+      org.opencontainers.image.title: ssarchiver
+      org.opencontainers.image.description: Archive and serve ScoreSaber replays
+      org.opencontainers.image.source: https://github.com/yyewolf/SSArchiver
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .CommitDate }}"
+      org.opencontainers.image.licenses: "BSD-3-Clause AND GPL-3.0-only"
+    annotations:
+      org.opencontainers.image.description: Archive and serve ScoreSaber replays
+      org.opencontainers.image.source: https://github.com/yyewolf/SSArchiver
+      org.opencontainers.image.licenses: "BSD-3-Clause AND GPL-3.0-only"
+
+docker_signs:
+  - cmd: cosign
+    args: ["sign", "${artifact}@${digest}", "--yes"]
+
+release:
+  footer: |
+    ### Verify
+
+    ```sh
+    gh attestation verify ssarchiver_{{ .Version }}_linux_amd64.tar.gz --repo yyewolf/SSArchiver
+    gh attestation verify oci://ghcr.io/yyewolf/ssarchiver:{{ .Version }} --repo yyewolf/SSArchiver
+    cosign verify ghcr.io/yyewolf/ssarchiver:{{ .Version }} \
+      --certificate-identity-regexp '^https://github.com/yyewolf/SSArchiver/' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+    ```
+
+    Bundles ArcViewer (GPL-3.0, unmodified) from https://github.com/AllPoland/ArcViewer/tree/c776256497b66f7c91a74162cfcd943b0f45ee2e — see THIRD_PARTY_NOTICES.md.
+
+changelog:
+  use: github
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:", "^ci:"]

@@ -40,3 +40,12 @@ run: build
 
 dev:
 	go tool templ generate --watch --proxy="http://localhost:8080" --cmd="go run ./cmd/ssarchiver serve --data-dir ./data --log-level debug"
+
+ARCH := $(shell go env GOARCH)
+
+.PHONY: image
+image: viewer
+	rm -rf .docker-ctx && mkdir -p .docker-ctx/linux/$(ARCH)
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o .docker-ctx/linux/$(ARCH)/ssarchiver ./cmd/ssarchiver
+	cp -r docker .docker-ctx/
+	docker build --platform linux/$(ARCH) -t ssarchiver:dev -f Dockerfile .docker-ctx
