@@ -53,8 +53,9 @@ ArcViewer (`github.com/AllPoland/ArcViewer`, GPL-3.0):
 | Accounts | Single admin, created by first-run setup |
 | Architecture | One service layer; huma JSON API + templ/htmx UI on one `net/http` mux; in-process sync worker |
 | DB | SQLite via pure-Go driver (`github.com/glebarez/sqlite`), GORM + GORM gen typed queries |
-| UI kit | templUI (shadcn port for templ), Tailwind v4 standalone CLI, htmx |
+| UI kit | shadcn-templ v2 (formerly templUI), Tailwind v4 standalone CLI, htmx 2 |
 | Image | `FROM scratch`, rootless (65532), read-only-rootfs compatible |
+| Module / image | `github.com/yyewolf/ssarchiver`, `ghcr.io/yyewolf/ssarchiver` |
 
 ## 4. Architecture
 
@@ -67,17 +68,21 @@ internal/db/               open, pragmas (WAL, foreign_keys, busy_timeout), migr
 internal/scoresaber/       typed v2 client + rate limiter; no app logic
 internal/storage/          replay blob store: {data}/replays/{playerID}/{scoreID}.dat
 internal/service/          players, scores, auth/sessions, settings, sync status read models
-internal/sync/             worker: poll, backfill, replay download, event log
+internal/archiver/         worker: poll, backfill, replay download, event log (named `archiver`, not `sync`, to avoid
+                           shadowing the standard library package)
 internal/api/              huma operations under /api/v1
 internal/web/              templ components/pages, htmx handlers, static assets (embedded), middleware
 internal/viewer/           go:generate fetcher + embedded precompressed ArcViewer + handler
 ```
 
-Dependency direction: `cli → (api, web, sync) → service → (db/query, storage, scoresaber)`. `api` and `web`
+Dependency direction: `cli → (api, web, archiver) → service → (db/query, storage, scoresaber)`. `api` and `web`
 never touch GORM directly.
 
 `serve` opens the DB, runs migrations, reconciles storage, then runs the HTTP server and the sync worker in one
 `errgroup` bound to a signal-cancelled context (SIGINT/SIGTERM), with a 15 s graceful HTTP shutdown.
+
+SQLite DSN pragmas: `journal_mode(WAL)`, `foreign_keys(1)`, `busy_timeout(5000)`, `temp_store(memory)` (no
+temp files outside `/data` on a read-only rootfs), plus `_txlock=immediate`.
 
 Config defaults: `SSA_DATA_DIR=./data` (`/data` in the image), `SSA_LISTEN=:8080`, `SSA_HOURLY_BUDGET=300`.
 `SSA_BASE_URL` is required for correct absolute URLs in embeds and OpenGraph; if unset, it is derived from the
@@ -89,7 +94,8 @@ All timestamps UTC.
 
 - **players**: `id` (ScoreSaber ID, PK, string), `name`, `avatar_url`, `country`, `enabled` (bool),
   `added_at`, `last_polled_at` (nullable), `last_error` (nullable), `backfill_state` (`pending|running|done`),
-  `backfill_page` (int, resume cursor), `backfill_total_pages` (int).
+  `backfill_page` (int, resume cursor), `backfill_total_pages` (int), `backfill_retry_at` (nullable; set for
+  5 minutes after a failed backfill page).
 - **leaderboards**: `id` (PK), `song_hash`, `song_name`, `song_sub_name`, `song_author`, `mapper`,
   `difficulty` (int), `difficulty_raw`, `game_mode`, `cover_url`, `status` (`RANKED|QUALIFIED|LOVED|UNRANKED`),
   `stars`, `max_score`.
@@ -114,7 +120,7 @@ Deleting a player removes its rows; the admin chooses whether to also delete fil
 
 Wraps every outgoing request. Three sliding windows (10 s/20, 60 s/60, 3600 s/`SSA_HOURLY_BUDGET`, default 300 to
 leave headroom on a shared IP). After each response it reads `x-ratelimit-remaining-*`/`reset-*` and, when the
-server reports less remaining than our own window, blocks until the server's reset. A 429 pauses all requests
+server reports `remaining <= 0` for any window, blocks all requests until that window's reset. A 429 pauses all requests
 until the longest reported reset. The limiter exposes a snapshot (used/limit/reset per window, last server
 values) for the status page. Uses an injectable clock for tests.
 
@@ -123,8 +129,11 @@ values) for the status page. Uses an injectable clock for tests.
 Single goroutine loop. Each tick picks the first available unit of work in priority order:
 
 1. **Poll** — an enabled player whose `last_polled_at` is older than `poll_interval`: list
-   `sort=recent&personalBest=all` pages until a page contains an already-known score ID (or the end). Upsert
-   leaderboards and scores; `has_replay` → `replay_state=pending`. Set `last_polled_at`.
+   `sort=recent&personalBest=all` pages until a page contains an already-known score ID, the end, or 5 pages.
+   Upsert leaderboards and scores; `has_replay` → `replay_state=pending`. Set `last_polled_at`. If the 5-page
+   cap is hit without reaching a known score while backfill is `done` (e.g. the instance was down for long),
+   the player's backfill is reset to `pending` starting at page 6 so the gap is walked by the backfill tier
+   (sort=recent pages only shift later as new scores arrive, so walking forward never skips a score).
 2. **New replays** — `pending` replays with `set_at >= player.added_at`, newest first.
 3. **Backfill listing** — one page for a player with `backfill_state != done`, from `backfill_page`;
    advance cursor; `done` when past `totalPages`.
@@ -134,13 +143,16 @@ Players are round-robined within each tier so one large backfill does not starve
 available, the loop sleeps until the earliest of: next poll due, next retry due, or a wake signal (manual
 "poll now", player added, resume). When `worker_paused` is set, the loop idles.
 
-New players start with `backfill_state=pending` and are polled immediately.
+New players start with `backfill_state=pending` and are polled immediately. Their first poll doubles as the
+start of the backfill: if it reaches the end of the history the backfill is marked `done`, otherwise the
+backfill continues from page 6 (pages 1–5 were already stored by the poll).
 
 ### 6.3 Replay download
 
 Stream to `{data}/replays/{player}/{score}.dat.tmp` while hashing (sha256), `fsync`, rename to `.dat`, then
 update the row (`archived`, size, hash, `archived_at`). Startup reconciliation: delete stray `.tmp` files;
-a `.dat` without an `archived` row is re-hashed and adopted if its score row exists, otherwise deleted;
+a `.dat` without an `archived` row is re-hashed and adopted if its score row exists, otherwise kept and
+counted as an orphan (it may belong to a player deleted with "keep files");
 an `archived` row whose file is missing returns to `pending`.
 
 ### 6.4 Errors
@@ -212,21 +224,26 @@ stays stable if viewer parameters change).
 - Headers everywhere: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
   CSP `default-src 'self'; img-src 'self' https://cdn.scoresaber.com data:; frame-ancestors 'none'`
   (`frame-src 'self'` on score pages).
-- `/embed/*` and `/viewer/*`: `frame-ancestors *`; `/viewer/*` CSP additionally allows `'wasm-unsafe-eval'`,
-  `'unsafe-inline'` scripts/styles required by the Unity loader, and `connect-src` for BeatSaver
-  (`https://*.beatsaver.com`, `https://*.beatmaps.io`) and self.
+- `/embed/*` and `/viewer/*`: `frame-ancestors *`; `/viewer/*` CSP is `default-src 'self'; script-src 'self'
+  'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:;
+  media-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self' blob:` — ArcViewer's
+  `index.html` uses inline scripts and fetches maps from BeatSaver hosts that are not enumerable.
+- `/api/docs` CSP additionally allows the docs renderer's CDN (`https://unpkg.com`) for scripts and styles.
 
 ### 7.4 Viewer embedding
 
 - `internal/viewer/fetch.go` (run by `go generate ./internal/viewer`): downloads the `deploy` branch tarball at
-  `ArcViewerSHA` (constant), verifies its sha256 (constant), extracts to `internal/viewer/dist/`, writes `.br`
-  and `.gz` siblings for compressible files, and copies ArcViewer's `LICENSE`.
+  `ArcViewerSHA` (constant) file by file from `raw.githubusercontent.com`, writes gzip
+  -compressed copies (`<path>.gz`, best compression; ~28 MB total) — only the `.gz` copies are embedded — and
+  ArcViewer's `LICENSE`. Every file is checked against a committed per-file sha256 manifest
+  (`internal/viewer/manifest.txt`), because GitHub tarball checksums are not stable.
 - `dist/` is git-ignored except a committed placeholder `dist/PLACEHOLDER`, so `//go:embed dist` always
   compiles (plain `go build`/lint work without the 80 MB download). When `dist/index.html` is absent the
   handler returns `503` "viewer not bundled — run `go generate ./internal/viewer`" and score pages hide the
   viewer. `make build`, CI and goreleaser `before.hooks` run the generator; the release workflow fails if
   `dist/index.html` is missing.
-- Handler picks `.br` → `.gz` → raw by `Accept-Encoding`, sets `Content-Encoding`, `Vary: Accept-Encoding`,
+- Handler serves the `.gz` bytes with `Content-Encoding: gzip` when `Accept-Encoding` allows gzip, otherwise
+  decompresses on the fly; always sets `Vary: Accept-Encoding`,
   correct MIME (`application/wasm`, `application/javascript`, `application/octet-stream` for `.data`), and
   long-lived caching keyed on the SHA (`/viewer/` responses carry `ETag: "{sha}-{file}"`).
 - `GET /viewer/LICENSE` serves ArcViewer's GPL-3.0 text; the footer and release notes link to the source at the
@@ -235,13 +252,13 @@ stays stable if viewer parameters change).
 
 ## 8. UI
 
-- templ components using **templUI** (copied into `internal/web/components/ui`, per templUI's model), shadcn
-  neutral tokens, Inter/system font stack, light/dark via `prefers-color-scheme` + toggle (stored in
+- templ components using **shadcn-templ v2** (the renamed templUI; `github.com/axadrn/shadcn-templ/v2`, CLI
+  copies components into `internal/web/components`), style `base-nova`, neutral base color, system font stack, light/dark via `prefers-color-scheme` + toggle (stored in
   `localStorage`), no gradients, no decorative shadows beyond shadcn defaults.
 - Tailwind v4 standalone CLI (pinned version, checksum-verified download in `scripts/`) builds
   `internal/web/static/app.css`; htmx served from embedded static (pinned, no CDN).
 - Pages: layout with top nav (instance title, Players, Admin when logged in), tables using shadcn table style,
-  badges for difficulty / ranked / replay state, cards for players, toasts for admin actions.
+  badges for difficulty / ranked / replay state, cards for players, toasts for admin actions (server-rendered `@toast.Toast` markers swapped in out-of-band by htmx).
 
 ## 9. Build, quality, release
 
@@ -258,7 +275,7 @@ stays stable if viewer parameters change).
   - `ci.yml` (PR + main): setup-go, generate, `git diff --exit-code`, lint, `go test -race ./...`, build.
   - `release.yml` (tags `v*`): goreleaser —
     binaries linux/darwin/windows × amd64/arm64, archives, checksums, SBOMs (syft);
-    multi-arch image `ghcr.io/yewolf/ssarchiver:{version,latest}`;
+    multi-arch image `ghcr.io/yyewolf/ssarchiver:{version,latest}`;
     keyless **cosign** signatures for checksums and image;
     **SLSA build provenance** via `actions/attest-build-provenance` for archives and image (verifiable with
     `gh attestation verify`). Permissions: `contents: write`, `packages: write`, `id-token: write`,
@@ -274,13 +291,13 @@ stays stable if viewer parameters change).
 - Works with `--read-only --cap-drop=ALL --security-opt=no-new-privileges` (all writes, including temp
   files and SQLite WAL, under `/data`) and under rootless Docker/Podman (README documents `:U` volume flag /
   `chown 65532` for bind mounts).
-- Expected size ≈ 35–40 MB, dominated by the embedded ArcViewer.
+- Expected size ≈ 40–45 MB, dominated by the embedded gzip'd ArcViewer (~28 MB).
 
 ## 10. Testing
 
 - `scoresaber`: `httptest` server with recorded JSON fixtures (scores page, player, replay bytes, 404, 429 with
-  headers); limiter windows and header sync with a fake clock.
-- `sync`: fake client + fake clock — priority order, round-robin, poll stops at known score, backfill resume
+  headers); limiter windows and header sync under `testing/synctest`.
+- `archiver`: fake client + injectable clock (`Service.SetClock`) — priority order, round-robin, poll stops at known score, backfill resume
   after restart, 404 → `gone`, backoff → `failed`, 429 pause, disk-error self-pause, storage reconciliation.
 - `service` / `db`: real SQLite in `t.TempDir()`.
 - `web` / `api`: `httptest` — setup only once (concurrent setup race), auth redirects, CSRF rejection,
