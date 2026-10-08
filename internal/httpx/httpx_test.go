@@ -74,8 +74,21 @@ func TestClientIP(t *testing.T) {
 	if ip := httpx.ClientIP(req, false); ip != "10.0.0.1" {
 		t.Fatalf("untrusted ip = %s", ip)
 	}
-	if ip := httpx.ClientIP(req, true); ip != "203.0.113.9" {
-		t.Fatalf("trusted ip = %s", ip)
+	if ip := httpx.ClientIP(req, true); ip != "10.0.0.1" {
+		t.Fatalf("trusted ip = %s, want rightmost XFF entry", ip)
+	}
+
+	spoofed := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	spoofed.RemoteAddr = "10.0.0.1:1234"
+	spoofed.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+	if ip := httpx.ClientIP(spoofed, true); ip != "5.6.7.8" {
+		t.Fatalf("trusted ip = %s, want rightmost 5.6.7.8 over spoofed leftmost 1.2.3.4", ip)
+	}
+
+	noXFF := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	noXFF.RemoteAddr = "10.0.0.1:1234"
+	if ip := httpx.ClientIP(noXFF, true); ip != "10.0.0.1" {
+		t.Fatalf("trusted ip without XFF = %s, want RemoteAddr host", ip)
 	}
 }
 

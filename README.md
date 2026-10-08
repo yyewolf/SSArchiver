@@ -47,7 +47,7 @@ use Podman's `:U` volume option (`-v ./data:/data:U`).
 | `SSA_LISTEN` | `--listen` | `:8080` | HTTP listen address |
 | `SSA_BASE_URL` | `--base-url` | derived from the request | Public URL used in embeds and link previews |
 | `SSA_HOURLY_BUDGET` | `--hourly-budget` | `300` | Max ScoreSaber requests per hour (1–360) |
-| `SSA_TRUST_PROXY` | `--trust-proxy` | `false` | Trust `X-Forwarded-*` headers |
+| `SSA_TRUST_PROXY` | `--trust-proxy` | `false` | Trust `X-Forwarded-*` headers; the proxy must set or append `X-Forwarded-For`, and the rightmost entry is treated as the client IP |
 | `SSA_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
 
 ScoreSaber allows 360 requests per hour per IP. A large history (thousands of
