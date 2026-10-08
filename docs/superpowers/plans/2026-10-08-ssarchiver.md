@@ -75,7 +75,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 9 | Archiver: replay download, reconciliation, status | ✅ done | kilo (euria-code) | 2026-10-08 | 6aca494 |
 | 10 | Embedded ArcViewer | ✅ done | kilo (euria-code) | 2026-10-08 | 83b5059 |
 | 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 5970ec8 |
-| 12 | Web auth (setup, login, logout) | ⬜ todo | | | |
+| 12 | Web auth (setup, login, logout) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | e358394 |
 | 13 | Public player & score pages | ⬜ todo | | | |
 | 14 | Replay download & embed endpoints | ⬜ todo | | | |
 | 15 | Admin: players & settings | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 11 done (commit 5970ec8; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 12 Step 1 (web auth — setup, login, logout)
+_Current task:_ Task 12 done (commit e358394; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 13 Step 1 (public player & score pages)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation (Task 11) landed with 4 forced deviations: registry item is `native-select` (dir `components/nativeselect`), vendored htmx 2.0.10 sha256 is `71ea6718…` (brief's checksum stale — do not "fix" it back), pinned CLI generates `icon.Icon(name)` factory not named icon funcs, lint-forced tweaks (errors.Is in Recover, `httptest.NewRequestWithContext` in tests, gofumpt, ST1023) plus 3 extra behavior tests + `helpers_test.go`. `components/aspectratio` is an unused CLI-pulled dep — leave it. Next: web auth (Task 12), then public pages (13-14), admin (15-16), API (17), wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation (Task 11) + auth pages (Task 12) landed; see Deviations log for the forced tweaks (G124 cookie Secure, `#nosec G710` on `redirect`, extra internal tests to satisfy the strict `unused` linter). Icons use the `icon.Icon(name)` factory. Next: public pages (Task 13), replay endpoints (14), admin (15-16), API (17), wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -111,6 +111,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation
 | 2026-10-08 | 11 | Icons used via `icon.Icon("sun"|"log-out"|"circle-alert")` factory instead of named funcs | pinned CLI generates an `Icon(name)` factory, not named icon functions | No |
 | 2026-10-08 | 11 | Lint fixes on plan code: `errors.Is(err, http.ErrAbortHandler)` in Recover (errorlint), gofumpt reformat, ST1023 `var hd :=`, `httptest.NewRequestWithContext` in new tests; extra behavior tests (`TestSessionCookieAuthenticates`, `TestHTMXRedirectUsesHXRedirect`, `helpers_test.go`) to keep scaffolding lint-clean without nolint | pinned linter v2.14.0 | No |
 | 2026-10-08 | 11 | `components/aspectratio` present but unused (CLI-pulled registry dependency); go.mod indirect bumps forced by templ v0.3.1070 (`x/crypto` 0.57.0, `x/text`, `go-isatty`, `tool` directive) | CLI behaviour; all four pinned tool versions intact | No |
+| 2026-10-08 | 12 | Cookie `Secure` set via conditional literal store instead of a field literal | gosec G124 (pinned linter); serialization-identical | No |
+| 2026-10-08 | 12 | `#nosec G710` on the pre-existing `redirect` helper | gosec taint analyzer cannot recognize `safeNext` validation; all 5 call sites verified constant/safe | No |
+| 2026-10-08 | 12 | Added `auth_internal_test.go` (`TestRequireAdmin`, `TestSafeNext`) | strict `unused` linter rejects `requireAdmin`/`safeNext` without tests (Task 11 precedent) | No |
 
 ### Verification log
 
@@ -159,6 +162,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation
 | 2026-10-08 | 11 | `make generate` | gen-go, gen-templ, gen-css all succeed |
 | 2026-10-08 | 11 | `go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 11 packages ok, 0 issues., build OK |
 | 2026-10-08 | 11 | controller spot-checks post-review: `make lint`, `sha256sum internal/web/static/js/htmx.min.js`, `bin/tailwindcss`, `go test ./...` | 0 issues., hash 71ea6718… matches ruling, v4.3.3 present, 11 pkgs ok |
+| 2026-10-08 | 12 | `go test ./internal/web/` (pre-impl, 4 brief tests) | FAIL (expected) |
+| 2026-10-08 | 12 | `go test ./internal/web/` (post-impl) | ok (setup-once, login success/failure, logout, open-redirect rejection, cookie flags) |
+| 2026-10-08 | 12 | `make test && make lint` | -race green, 0 issues. |
+| 2026-10-08 | 12 | controller spot-checks post-review: `make gen-css` + `git status` | gen-css idempotent, tree clean |
 
 ---
 
@@ -685,7 +692,7 @@ internal/viewer/dist/*
 Run: `make lint`
 Expected: `0 issues.` Fix anything reported (typically formatting: run `$(GOLANGCI) fmt`).
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add go.mod go.sum cmd internal Makefile .golangci.yml .gitignore
@@ -1084,7 +1091,7 @@ func TestIsDuplicate(t *testing.T) {
 Run: `go test ./internal/db/...`
 Expected: `ok`. (If `TestPragmas` reports `temp_store=0`, the driver ignored the pragma: switch the DSN to `_pragma=temp_store(2)` and log a deviation.)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 make lint
@@ -7868,7 +7875,7 @@ git commit -m "feat: add web foundation with shadcn-templ layout, security heade
   - `safeNext(string) string` (only same-site absolute paths; default `/admin`)
   - `views.AuthForm{Username, Next, Error string}`, templ `views.Setup(Page, AuthForm)`, `views.Login(Page, AuthForm)`
 
-- [ ] **Step 1: Write the failing tests** — `internal/web/auth_test.go`
+- [x] **Step 1: Write the failing tests** — `internal/web/auth_test.go`
 
 ```go
 package web_test
@@ -7991,12 +7998,12 @@ func TestLogout(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `go test ./internal/web/ -run 'Setup|Login|Logout'`
 Expected: FAIL (404s for `/setup`, `/login`).
 
-- [ ] **Step 3: Write the views** — `internal/web/views/auth.templ`
+- [x] **Step 3: Write the views** — `internal/web/views/auth.templ`
 
 ```templ
 package views
@@ -8093,7 +8100,7 @@ templ Login(p Page, f AuthForm) {
 }
 ```
 
-- [ ] **Step 4: Implement handlers** — `internal/web/auth.go`
+- [x] **Step 4: Implement handlers** — `internal/web/auth.go`
 
 ```go
 package web
@@ -8254,7 +8261,7 @@ Register routes in `Routes` (append):
 	mux.HandleFunc("POST /logout", h.logout)
 ```
 
-- [ ] **Step 5: Generate and run tests**
+- [x] **Step 5: Generate and run tests**
 
 ```bash
 go tool templ generate && go test ./internal/web/...
@@ -8262,7 +8269,7 @@ go tool templ generate && go test ./internal/web/...
 
 Expected: `ok`. Note `TestSetupFlow` expects `Secure` cookies because the test config's base URL is https.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 make generate && make lint
