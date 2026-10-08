@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/alexedwards/argon2id"
+
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/storage"
@@ -22,6 +24,7 @@ func NewService(t testing.TB) (*service.Service, *Resolver, *Clock) {
 		"1002": {ID: "1002", Name: "Bob", Country: "US", Avatar: "https://cdn.scoresaber.com/avatars/1002.jpg"},
 	}}
 	svc := service.New(gdb, store, res)
+	service.PasswordParams = &argon2id.Params{Memory: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	clk := NewClock(T0)
 	svc.SetClock(clk.Now)
 	return svc, res, clk
