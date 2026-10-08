@@ -69,7 +69,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 3 | ScoreSaber rate limiter | ✅ done | kilo (euria-code) | 2026-10-08 | 3f13084 |
 | 4 | ScoreSaber client | ✅ done | kilo (euria-code) | 2026-10-08 | ca78f43 |
 | 5 | Replay blob storage | ✅ done | kilo (euria-code) | 2026-10-08 | 1dac253 |
-| 6 | Service: players, scores, replay queue, events log | ⬜ todo | | | |
+| 6 | Service: players, scores, replay queue, events log | ✅ done | kilo (euria-code) | 2026-10-08 | 1a38195 |
 | 7 | Service: auth, sessions, settings, events listing | ⬜ todo | | | |
 | 8 | Archiver: poll, backfill, loop | ⬜ todo | | | |
 | 9 | Archiver: replay download, reconciliation, status | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 5 done (commit 1dac253)
-_Next step:_ Task 6 Step 1 (service test helpers)
+_Current task:_ Task 6 done (commit 1a38195)
+_Next step:_ Task 7 Step 1 (cheap argon2id params in testutil)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Live smoke test uses owner profile 76561198038925092. Storage deviates slightly from plan code for gosec G302/G122 (0o600 tmp files, os.Root scan).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Service layer passed tests as written — no API changes needed; Task 7+ can rely on the documented interfaces.
 
 ### Deviations log
 
@@ -101,6 +101,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 4 | Live smoke test uses player id `76561198038925092` instead of `1922350521131465` | User asked their own profile be used for tests | No |
 | 2026-10-08 | 5 | `Store.Put` writes `.tmp` with `0o600` instead of `0o640` | gosec G302 (pinned linter) rejects group-readable files; replays need no group access | No |
 | 2026-10-08 | 5 | `Store.Scan` removes `.tmp` via `os.Root` scoped to the store root; added `_ =` discards on `Close` | gosec G122 (TOCTOU) + errcheck under pinned linter; behaviour unchanged | No |
+| 2026-10-08 | 6 | None — plan code compiled and passed as written (gen `GteCol`/`LtCol` and `Update(col, nil)` worked; `Preload(q.Score.Leaderboard)` relation present) | — | — |
 
 ### Verification log
 
@@ -125,6 +126,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 5 | `go test ./internal/storage/...` (pre-impl) | FAIL: no non-test Go files (expected) |
 | 2026-10-08 | 5 | `go test -race ./internal/storage/...` | ok |
 | 2026-10-08 | 5 | `go test ./... && make lint` (after gosec/errcheck fixes) | all ok, 0 issues. |
+| 2026-10-08 | 6 | `go test ./internal/service/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 6 | `go mod tidy && go test -race ./internal/service/...` | ok (all 4 test files, incl. archive-state preservation + ParsePlayerRef) |
+| 2026-10-08 | 6 | `go test ./... && make lint` | all ok, 0 issues. |
 
 ---
 
@@ -2306,7 +2310,7 @@ Implementation notes:
 - Any gen query that uses `Join` **must** `Select(q.Score.ALL)` before `Find/First` (otherwise joined columns like `players.id` overwrite `scores.id`), and must **not** call `Count()` on a DO that has `Select(ALL)` (SQLite rejects `COUNT(scores.*)`). Build the filtered DO with a helper and call it twice.
 - If the generated `field.Time` lacks `GteCol`/`LtCol`, use `field.NewUnsafeFieldRaw("scores.set_at >= players.added_at")` and log a deviation.
 
-- [ ] **Step 1: Write the test helpers** — `internal/testutil/fakes.go`
+- [x] **Step 1: Write the test helpers** — `internal/testutil/fakes.go`
 
 ```go
 package testutil
@@ -2424,7 +2428,7 @@ func NewService(t testing.TB) (*service.Service, *Resolver, *Clock) {
 }
 ```
 
-- [ ] **Step 2: Write the failing player tests** — `internal/service/players_test.go`
+- [x] **Step 2: Write the failing player tests** — `internal/service/players_test.go`
 
 ```go
 package service_test
@@ -2607,7 +2611,7 @@ func upsert(t *testing.T, svc *service.Service, playerID string, clk *testutil.C
 }
 ```
 
-- [ ] **Step 3: Write the failing score tests** — `internal/service/scores_test.go`
+- [x] **Step 3: Write the failing score tests** — `internal/service/scores_test.go`
 
 ```go
 package service_test
@@ -2745,7 +2749,7 @@ func TestListScoresFiltersAndPaging(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Write the failing replay-queue tests** — `internal/service/replays_test.go`
+- [x] **Step 4: Write the failing replay-queue tests** — `internal/service/replays_test.go`
 
 ```go
 package service_test
@@ -2903,7 +2907,7 @@ func TestNextRetryAt(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Write the failing poll/backfill tests** — `internal/service/backfill_test.go`
+- [x] **Step 5: Write the failing poll/backfill tests** — `internal/service/backfill_test.go`
 
 ```go
 package service_test
@@ -3011,12 +3015,12 @@ func TestNextBackfillPlayer(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they fail**
+- [x] **Step 6: Run tests to verify they fail**
 
 Run: `go test ./internal/service/...`
 Expected: FAIL — `undefined: service.New` etc.
 
-- [ ] **Step 7: Implement the core** — `internal/service/service.go`
+- [x] **Step 7: Implement the core** — `internal/service/service.go`
 
 ```go
 // Package service holds SSArchiver's business logic. It is the only package
@@ -3124,7 +3128,7 @@ func pickAfter(ids []string, last string) string {
 }
 ```
 
-- [ ] **Step 8: Implement events logging** — `internal/service/events.go`
+- [x] **Step 8: Implement events logging** — `internal/service/events.go`
 
 ```go
 package service
@@ -3163,7 +3167,7 @@ func (s *Service) Log(ctx context.Context, e model.SyncEvent) {
 }
 ```
 
-- [ ] **Step 9: Implement players** — `internal/service/players.go`
+- [x] **Step 9: Implement players** — `internal/service/players.go`
 
 ```go
 package service
@@ -3355,7 +3359,7 @@ func (s *Service) RequestPoll(ctx context.Context, id string) error {
 
 > Note: `Update(column, nil)` with gen sets the column to NULL. If the generated `Update` rejects `nil`, use `UpdateSimple(s.q.Player.LastPolledAt.Null())` (gen ≥ 0.3.20) and log a deviation.
 
-- [ ] **Step 10: Implement scores** — `internal/service/scores.go`
+- [x] **Step 10: Implement scores** — `internal/service/scores.go`
 
 ```go
 package service
@@ -3541,7 +3545,7 @@ func (s *Service) GetScore(ctx context.Context, id int64) (*model.Score, error) 
 }
 ```
 
-- [ ] **Step 11: Implement the replay queue** — `internal/service/replays.go`
+- [x] **Step 11: Implement the replay queue** — `internal/service/replays.go`
 
 ```go
 package service
@@ -3698,7 +3702,7 @@ func (s *Service) NextRetryAt(ctx context.Context) (time.Time, bool, error) {
 }
 ```
 
-- [ ] **Step 12: Implement poll/backfill bookkeeping** — `internal/service/backfill.go`
+- [x] **Step 12: Implement poll/backfill bookkeeping** — `internal/service/backfill.go`
 
 ```go
 package service
@@ -3828,14 +3832,14 @@ func (s *Service) DeferBackfill(ctx context.Context, id string, until time.Time,
 }
 ```
 
-- [ ] **Step 13: Run tests**
+- [x] **Step 13: Run tests**
 
 Run: `go mod tidy && go test -race ./internal/service/...`
 Expected: `ok`. Common failures and fixes:
 - `ambiguous column name: id` → a `Where`/`Order` on a joined query used an unqualified column; use the gen field (`q.ID`), which is table-qualified.
 - Scores with wrong IDs → you forgot `Select(q.ALL)` on a joined `Find/First`.
 
-- [ ] **Step 14: Commit**
+- [x] **Step 14: Commit**
 
 ```bash
 make lint
