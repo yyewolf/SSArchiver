@@ -33,3 +33,10 @@ lint:
 
 tidy:
 	go mod tidy
+
+.PHONY: run dev
+run: build
+	./bin/ssarchiver serve --data-dir ./data --log-level debug
+
+dev:
+	go tool templ generate --watch --proxy="http://localhost:8080" --cmd="go run ./cmd/ssarchiver serve --data-dir ./data --log-level debug"

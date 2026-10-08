@@ -21,7 +21,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	cfg.BindFlags(root.PersistentFlags())
-	root.AddCommand(newVersionCmd())
+	root.AddCommand(newVersionCmd(), newServeCmd(&cfg), newHealthcheckCmd(&cfg), newMigrateCmd(&cfg), newUserCmd(&cfg))
 	return root
 }
 
