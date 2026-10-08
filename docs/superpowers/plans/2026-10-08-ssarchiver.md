@@ -78,7 +78,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 12 | Web auth (setup, login, logout) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | e358394 |
 | 13 | Public player & score pages | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | b1fdf42 |
 | 14 | Replay download & embed endpoints | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | f4cd83c |
-| 15 | Admin: players & settings | ⬜ todo | | | |
+| 15 | Admin: players & settings | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | c3a309f |
 | 16 | Admin: sync status page | ⬜ todo | | | |
 | 17 | huma JSON API | ⬜ todo | | | |
 | 18 | App wiring, serve/healthcheck/migrate/user commands, e2e test | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 14 done (commit f4cd83c; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 15 Step 1 (admin — players & settings)
+_Current task:_ Task 15 done (commit c3a309f; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 16 Step 1 (admin sync status page)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages all landed (11-14): foundation, auth, public player/score pages, replay download+embed. Standing lint-driven tweaks are in the Deviations log; icons via `icon.Icon(name)` factory with named vars in `icon_defs.go`. Next: admin players/settings (15), sync status (16), API (17), wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages landed (11-15): foundation, auth, public pages, replay endpoints, admin players+settings. Standing lint-driven tweaks in Deviations log; icons via `icon.Icon(name)` factory with named vars in `icon_defs.go`. Next: sync status (16), API (17), wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -116,6 +116,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages all 
 | 2026-10-08 | 12 | Added `auth_internal_test.go` (`TestRequireAdmin`, `TestSafeNext`) | strict `unused` linter rejects `requireAdmin`/`safeNext` without tests (Task 11 precedent) | No |
 | 2026-10-08 | 13 | None — brief followed verbatim; added `icon_defs.go` named vars wrapping the `icon.Icon(name)` factory so the brief's icon snippets compile as written | resolves Task 11's icon-factory ruling inside Task 13's snippets | No |
 | 2026-10-08 | 14 | `defer f.Close()` → `defer func() { _ = f.Close() }()` in `replay.go` | errcheck (pinned linter); matches viewer/handler.go precedent | No |
+| 2026-10-08 | 15 | None — brief applied verbatim, zero deviations | — | — |
 
 ### Verification log
 
@@ -177,6 +178,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages all 
 | 2026-10-08 | 14 | `go test ./internal/web/` (post-impl) | ok (pending/gone/nonexistent ids, Range, HEAD, CORS preflight, frame-ancestors) |
 | 2026-10-08 | 14 | `go test ./... && go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | all green, 0 issues. |
 | 2026-10-08 | 14 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 11 pkgs ok, tree clean |
+| 2026-10-08 | 15 | `go test ./internal/web/` (pre-impl, 5 tests) | FAIL (expected) |
+| 2026-10-08 | 15 | `go test ./internal/web/` (post-impl) | ok (admin auth 303/401+HX-Redirect, add/remove player incl. replay-file deletion, settings+password flows, duplicate add, invalid refs) |
+| 2026-10-08 | 15 | `go test ./... && make test && make lint && CGO_ENABLED=0 go build -trimpath ./...` | all green, 0 issues. |
+| 2026-10-08 | 15 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 11 pkgs ok, tree clean |
 
 ---
 
@@ -9359,7 +9364,7 @@ git commit -m "feat: serve replay downloads with CORS/Range and embeddable viewe
   - `sentence(err error) string` helper (capitalise + full stop)
 - htmx convention: validation problems are answered **200** (htmx does not swap 4xx by default) — either a re-rendered form with an error, or `toastOnly`.
 
-- [ ] **Step 1: Write the failing tests** — `internal/web/admin_test.go`
+- [x] **Step 1: Write the failing tests** — `internal/web/admin_test.go`
 
 ```go
 package web_test
@@ -9479,7 +9484,7 @@ func TestSettings(t *testing.T) {
 
 Run: `go test ./internal/web/ -run 'Admin|Lookup|AddPlayer|RowActions|Settings'` → FAIL.
 
-- [ ] **Step 2: Write the admin views** — `internal/web/views/admin.templ`
+- [x] **Step 2: Write the admin views** — `internal/web/views/admin.templ`
 
 ```templ
 package views
@@ -9848,7 +9853,7 @@ templ PasswordSettings(v PasswordView) {
 }
 ```
 
-- [ ] **Step 3: Implement handlers** — `internal/web/admin.go`
+- [x] **Step 3: Implement handlers** — `internal/web/admin.go`
 
 ```go
 package web
@@ -10079,7 +10084,7 @@ Register in `Routes`:
 	mux.HandleFunc("POST /admin/password", h.requireAdmin(h.changePassword))
 ```
 
-- [ ] **Step 4: Generate and test**
+- [x] **Step 4: Generate and test**
 
 ```bash
 go tool templ generate && make gen-css && go test ./internal/web/...
@@ -10087,7 +10092,7 @@ go tool templ generate && make gen-css && go test ./internal/web/...
 
 Expected: `ok`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 make generate && make lint
