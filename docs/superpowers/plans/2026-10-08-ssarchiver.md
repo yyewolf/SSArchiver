@@ -65,7 +65,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | # | Task | Status | Owner | Started | Commit |
 |---|------|--------|-------|---------|--------|
 | 1 | Project bootstrap (go.mod, cobra, config, lint, Makefile) | ✅ done | kilo (euria-code) | 2026-10-08 | 7bab24d |
-| 2 | Models, SQLite, gorm gen | ⬜ todo | | | |
+| 2 | Models, SQLite, gorm gen | ✅ done | kilo (euria-code) | 2026-10-08 | 6a44ea8 |
 | 3 | ScoreSaber rate limiter | ⬜ todo | | | |
 | 4 | ScoreSaber client | ⬜ todo | | | |
 | 5 | Replay blob storage | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 1 done (commit 7bab24d)
-_Next step:_ Task 2 Step 1 (models)
-_Half-done / uncommitted:_ plan file updates for Task 1 (committed in the docs commit that lands with this edit)
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction (see Deviations log); GOTOOLCHAIN=auto downloads go1.27.0. `make lint` runs golangci-lint v2.14.0 via `go run` (downloads on first use).
+_Current task:_ Task 2 done (commit 6a44ea8)
+_Next step:_ Task 3 Step 1 (ScoreSaber rate limiter tests)
+_Half-done / uncommitted:_ —
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's transitives were bumped (dbresolver 1.6.2, x/tools 0.51.0) to compile under gorm v1.31.2 + Go 1.27 — see Deviations log. Generated query pkg committed.
 
 ### Deviations log
 
@@ -97,6 +97,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction (see Deviations
 |------|------|-----------|--------|----------------------|
 | 2026-10-08 | 1 | `go.mod` uses `go 1.27` instead of `go 1.26` (Tech Stack + Global Constraints updated) | User instruction: "use go 1.27" | Yes — plan header/constraints updated |
 | 2026-10-08 | 1 | `internal/cli/version.go` discards the `fmt.Fprintf` return (`_, _ =`) | golangci-lint v2.14.0 errcheck rejects the unchecked call | No |
+| 2026-10-08 | 2 | Bumped transitive deps `gorm.io/plugin/dbresolver` 1.5.3→1.6.2 and `golang.org/x/tools` →v0.51.0 (x/mod, x/sys follow) | gen v0.3.29's pinned transitives don't compile with gorm v1.31.2 (`undefined: gorm.Stmt`) / Go 1.27 (x/tools tokeninternal); gen/gorm/sqlite stay at pinned versions | No |
 
 ### Verification log
 
@@ -107,6 +108,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction (see Deviations
 | 2026-10-08 | 1 | `go test ./... && CGO_ENABLED=0 go build -o /dev/null ./cmd/ssarchiver` | all ok, build succeeds |
 | 2026-10-08 | 1 | `make lint` (after `_, _ = fmt.Fprintf` fix) | 0 issues. |
 | 2026-10-08 | 1 | `go build ./... && go test ./...` (go 1.27.0) | all ok |
+| 2026-10-08 | 2 | `go generate ./internal/db && go mod tidy` | query pkg generated; `func Use` + `Leaderboard` relation present |
+| 2026-10-08 | 2 | `go test ./internal/db/...` | ok (pragmas, preload, cascade, IsDuplicate) |
+| 2026-10-08 | 2 | `golangci-lint fmt` + `make lint` | 0 issues. (gofumpt field alignment in model.go) |
+| 2026-10-08 | 2 | `go build ./... && go test ./...` | all ok |
 
 ---
 
@@ -657,7 +662,7 @@ git commit -m "chore: bootstrap module, cobra root, config and lint setup"
   - Generated `query.Use(*gorm.DB) *query.Query` with `q.Player`, `q.Score`, … and `IPlayerDo`/`IScoreDo`… interfaces (mode `gen.WithQueryInterface`)
   - `testutil.OpenDB(t testing.TB) *gorm.DB` (temp dir, migrated, closed on cleanup)
 
-- [ ] **Step 1: Write the models** — `internal/model/model.go`
+- [x] **Step 1: Write the models** — `internal/model/model.go`
 
 ```go
 // Package model holds the GORM models. They are the input of gorm gen
@@ -792,7 +797,7 @@ func All() []any {
 }
 ```
 
-- [ ] **Step 2: Write db.Open / Migrate** — `internal/db/db.go`
+- [x] **Step 2: Write db.Open / Migrate** — `internal/db/db.go`
 
 ```go
 // Package db opens the SQLite database and runs migrations.
@@ -870,7 +875,7 @@ func IsDuplicate(err error) bool {
 }
 ```
 
-- [ ] **Step 3: Write the generator** — `internal/db/gen/main.go`
+- [x] **Step 3: Write the generator** — `internal/db/gen/main.go`
 
 ```go
 // Command gen generates typed queries into internal/db/query.
@@ -893,7 +898,7 @@ func main() {
 }
 ```
 
-- [ ] **Step 4: Generate and inspect**
+- [x] **Step 4: Generate and inspect**
 
 ```bash
 go get gorm.io/gorm@v1.31.2 gorm.io/gen@v0.3.29 github.com/glebarez/sqlite@v1.11.0
@@ -915,7 +920,7 @@ gen-go:
 	go generate ./internal/db
 ```
 
-- [ ] **Step 5: Write the test helper** — `internal/testutil/db.go`
+- [x] **Step 5: Write the test helper** — `internal/testutil/db.go`
 
 ```go
 // Package testutil holds fakes and helpers shared by tests. It must only be
@@ -946,7 +951,7 @@ func OpenDB(t testing.TB) *gorm.DB {
 }
 ```
 
-- [ ] **Step 6: Write the DB tests** — `internal/db/db_test.go`
+- [x] **Step 6: Write the DB tests** — `internal/db/db_test.go`
 
 ```go
 package db_test
@@ -1027,7 +1032,7 @@ func TestIsDuplicate(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run: `go test ./internal/db/...`
 Expected: `ok`. (If `TestPragmas` reports `temp_store=0`, the driver ignored the pragma: switch the DSN to `_pragma=temp_store(2)` and log a deviation.)
