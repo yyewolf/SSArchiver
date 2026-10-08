@@ -74,7 +74,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 8 | Archiver: poll, backfill, loop | ✅ done | kilo (euria-code) | 2026-10-08 | a6eead1 |
 | 9 | Archiver: replay download, reconciliation, status | ✅ done | kilo (euria-code) | 2026-10-08 | 6aca494 |
 | 10 | Embedded ArcViewer | ✅ done | kilo (euria-code) | 2026-10-08 | 83b5059 |
-| 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ⬜ todo | | | |
+| 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 5970ec8 |
 | 12 | Web auth (setup, login, logout) | ⬜ todo | | | |
 | 13 | Public player & score pages | ⬜ todo | | | |
 | 14 | Replay download & embed endpoints | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 10 done (commit 83b5059)
-_Next step:_ Task 11 Step 1 (shadcn-templ init)
+_Current task:_ Task 11 done (commit 5970ec8; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 12 Step 1 (web auth — setup, login, logout)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. ArcViewer bundle generated locally (30 MB, git-ignored except PLACEHOLDER); `make viewer` / `make build` regenerate it. Next: web UI (Tasks 11-16), then API, wiring, packaging.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation (Task 11) landed with 4 forced deviations: registry item is `native-select` (dir `components/nativeselect`), vendored htmx 2.0.10 sha256 is `71ea6718…` (brief's checksum stale — do not "fix" it back), pinned CLI generates `icon.Icon(name)` factory not named icon funcs, lint-forced tweaks (errors.Is in Recover, `httptest.NewRequestWithContext` in tests, gofumpt, ST1023) plus 3 extra behavior tests + `helpers_test.go`. `components/aspectratio` is an unused CLI-pulled dep — leave it. Next: web auth (Task 12), then public pages (13-14), admin (15-16), API (17), wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -106,6 +106,11 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. ArcViewer bund
 | 2026-10-08 | 8 | `Worker.lastReplayPlayer` field and `fakeClient.replaysCalled()` removed in Task 8 (re-added by Task 9) | pinned `unused` linter rejects members only used by Task 9 | Yes — Task 9 must re-add them |
 | 2026-10-08 | 9 | Re-added `lastReplayPlayer` + `replaysCalled()` exactly as the plan originally specified; otherwise none | resolves the Task 8 deviation | Yes — deviation resolved |
 | 2026-10-08 | 10 | Lint fixes on plan code: `_ =` discards on deferred `Close`s; `writeGzip` dirs 0o750 + `WriteFile` 0o600 (G301/G306); on-the-fly decompression bounded by `maxViewerFile` = 256 MB (G110); tests use `httptest.NewRequestWithContext` (noctx) | pinned linter v2.14.0; behaviour unchanged | No |
+| 2026-10-08 | 11 | shadcn-templ registry item is `native-select`, not `nativeselect` (generated dir stays `components/nativeselect`) | pinned beta.13 registry has no `nativeselect` item; official docs use `native-select` | No |
+| 2026-10-08 | 11 | Vendored htmx 2.0.10 hashes `71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de`, not the plan's `4b2fd977…` | plan checksum stale/unpublished for canonical unpkg artifact; verified 3 ways (unpkg package.json, jsDelivr byte-identical, embedded version string) | No |
+| 2026-10-08 | 11 | Icons used via `icon.Icon("sun"|"log-out"|"circle-alert")` factory instead of named funcs | pinned CLI generates an `Icon(name)` factory, not named icon functions | No |
+| 2026-10-08 | 11 | Lint fixes on plan code: `errors.Is(err, http.ErrAbortHandler)` in Recover (errorlint), gofumpt reformat, ST1023 `var hd :=`, `httptest.NewRequestWithContext` in new tests; extra behavior tests (`TestSessionCookieAuthenticates`, `TestHTMXRedirectUsesHXRedirect`, `helpers_test.go`) to keep scaffolding lint-clean without nolint | pinned linter v2.14.0 | No |
+| 2026-10-08 | 11 | `components/aspectratio` present but unused (CLI-pulled registry dependency); go.mod indirect bumps forced by templ v0.3.1070 (`x/crypto` 0.57.0, `x/text`, `go-isatty`, `tool` directive) | CLI behaviour; all four pinned tool versions intact | No |
 
 ### Verification log
 
@@ -146,6 +151,14 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. ArcViewer bund
 | 2026-10-08 | 10 | `go test -race ./internal/viewer/...` | ok |
 | 2026-10-08 | 10 | `go generate ./internal/viewer` ×2 | dist = 30 MB; second run: "viewer bundle up to date"; git ignores dist/* except PLACEHOLDER |
 | 2026-10-08 | 10 | `go test ./... && make lint` (after lint fixes) | all ok, 0 issues. |
+| 2026-10-08 | 11 | `go test ./internal/httpx/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 11 | `go test ./internal/httpx/...` | ok (nonce, nosniff, DocsCSP, BaseURL/XFF, ClientIP, Recover) |
+| 2026-10-08 | 11 | `go test ./internal/web/views/...` (pre-impl) | FAIL: undefined: TimeAgo … (expected) |
+| 2026-10-08 | 11 | `go test ./internal/web/views/...` | ok (all 22 format assertions) |
+| 2026-10-08 | 11 | `go test ./internal/web/ -v -run 'TestHealthz\|TestRedirectsToSetupUntilDone\|TestHomeListsPlayersWithSecurityHeaders\|TestStaticCaching\|TestCrossSitePostRejected'` | 5/5 PASS |
+| 2026-10-08 | 11 | `make generate` | gen-go, gen-templ, gen-css all succeed |
+| 2026-10-08 | 11 | `go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 11 packages ok, 0 issues., build OK |
+| 2026-10-08 | 11 | controller spot-checks post-review: `make lint`, `sha256sum internal/web/static/js/htmx.min.js`, `bin/tailwindcss`, `go test ./...` | 0 issues., hash 71ea6718… matches ruling, v4.3.3 present, 11 pkgs ok |
 
 ---
 
@@ -6413,7 +6426,7 @@ git commit -m "feat: embed pinned ArcViewer build with gzip serving"
   - Format helpers (`views/format.go`): `Number[T ~int|~int64](T) string`, `Percent(float64) string`, `PP(float64) string`, `DifficultyName(int) string`, `TimeAgo(t, now time.Time) string`, `Until(t, now time.Time) string`, `HumanDuration(time.Duration) string`, `HumanBytes(int64) string`, `Initials(string) string`, `ScoreURL(int64) string`, `ReplayPath(int64) string`, `EmbedPath(int64) string`
   - `testutil.Gzip(s string) []byte`
 
-- [ ] **Step 1: Install shadcn-templ into the repo** (verified flow for v2.0.0-beta.13 — `init` always writes root-level aliases, so we rewrite `components.json` afterwards):
+- [x] **Step 1: Install shadcn-templ into the repo** (verified flow for v2.0.0-beta.13 — `init` always writes root-level aliases, so we rewrite `components.json` afterwards):
 
 ```bash
 ST="go run github.com/axadrn/shadcn-templ/v2/cmd/shadcn-templ@v2.0.0-beta.13"
@@ -6462,7 +6475,7 @@ grep -n bundleSrc internal/web/components/scripts_bundle.go
 
 Expected: `internal/web/components/{button,card,…,icon,toast}/` exist, `internal/web/utils/shadcn-templ.go` exists, `bundleSrc = "/static/js/shadcn-templ-<hash>.js"`, the JS bundle is in `internal/web/static/js/`, and the build succeeds. If any import still says `github.com/yyewolf/ssarchiver/components`, the aliases were not picked up: re-check `components.json` and rerun `add … --overwrite`.
 
-- [ ] **Step 2: Configure Tailwind input** — edit `internal/web/assets/css/globals.css`: replace the first line `@import "tailwindcss";` with the two lines below (disables auto source detection — otherwise class names in `docs/` would bloat the CSS — and scans only `internal/web`):
+- [x] **Step 2: Configure Tailwind input** — edit `internal/web/assets/css/globals.css`: replace the first line `@import "tailwindcss";` with the two lines below (disables auto source detection — otherwise class names in `docs/` would bloat the CSS — and scans only `internal/web`):
 
 ```css
 @import "tailwindcss" source(none);
@@ -6514,7 +6527,7 @@ bin/tailwindcss:
 	./scripts/fetch-tailwind.sh
 ```
 
-- [ ] **Step 3: Vendor htmx and write the small scripts**
+- [x] **Step 3: Vendor htmx and write the small scripts**
 
 ```bash
 mkdir -p internal/web/static/js internal/web/static/css
@@ -6630,7 +6643,7 @@ func Handler() http.Handler {
 
 Run `make gen-css` once now so `internal/web/static/css/app.css` exists (the embed needs it). Expected: `bin/tailwindcss` downloaded, `app.css` written.
 
-- [ ] **Step 4: Write the failing httpx tests** — `internal/httpx/httpx_test.go`
+- [x] **Step 4: Write the failing httpx tests** — `internal/httpx/httpx_test.go`
 
 ```go
 package httpx_test
@@ -6723,7 +6736,7 @@ func TestRecover(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run to verify failure, then implement** — `go test ./internal/httpx/...` fails (`undefined`). Write `internal/httpx/httpx.go`:
+- [x] **Step 5: Run to verify failure, then implement** — `go test ./internal/httpx/...` fails (`undefined`). Write `internal/httpx/httpx.go`:
 
 ```go
 // Package httpx holds HTTP helpers shared by the web UI and the JSON API.
@@ -6889,7 +6902,7 @@ func Logging(next http.Handler) http.Handler {
 
 Run: `go test ./internal/httpx/...` → `ok`.
 
-- [ ] **Step 6: Write the views base** — `internal/web/views/page.go`
+- [x] **Step 6: Write the views base** — `internal/web/views/page.go`
 
 ```go
 // Package views holds the templ pages and partials.
@@ -7083,7 +7096,7 @@ func TestFormat(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Write the layout and shared partials** — `internal/web/views/layout.templ`
+- [x] **Step 7: Write the layout and shared partials** — `internal/web/views/layout.templ`
 
 ```templ
 package views
@@ -7346,7 +7359,7 @@ templ playerCard(pl service.PlayerSummary) {
 }
 ```
 
-- [ ] **Step 8: Write the web handler core** — `internal/web/web.go`
+- [x] **Step 8: Write the web handler core** — `internal/web/web.go`
 
 ```go
 // Package web serves the HTML UI (templ + htmx).
@@ -7596,7 +7609,7 @@ func (l *loginLimiter) Allow(key string, now time.Time) bool {
 }
 ```
 
-- [ ] **Step 9: Add the test env and failing page tests**
+- [x] **Step 9: Add the test env and failing page tests**
 
 Append to `internal/testutil/fakes.go` (add imports `bytes`, `compress/gzip`):
 
@@ -7821,7 +7834,7 @@ func TestCrossSitePostRejected(t *testing.T) {
 }
 ```
 
-- [ ] **Step 10: Generate, run and fix**
+- [x] **Step 10: Generate, run and fix**
 
 ```bash
 go tool templ generate
@@ -7831,7 +7844,7 @@ go test ./internal/web/... ./internal/httpx/...
 
 Expected: `ok`. The API and `/logout` routes do not exist yet, but both assertions hold already: `requireSetup` answers `/api/*` with 503 before setup, and `CrossOriginProtection` (wrapping the mux directly) rejects the cross-site POST with 403 before routing. If either fails, the middleware order in `Middleware` is wrong.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 make generate && make lint
