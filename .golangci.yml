@@ -1,0 +1,47 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - revive
+    - sqlclosecheck
+    - unconvert
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+    gosec:
+      excludes:
+        - G304 # file paths are validated by storage
+  exclusions:
+    generated: lax
+    paths:
+      - internal/db/query
+      - internal/web/components
+      - internal/web/utils
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck]
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/yyewolf/ssarchiver
+  exclusions:
+    generated: lax
+    paths:
+      - internal/db/query
+      - internal/web/components
+      - internal/web/utils
