@@ -72,6 +72,12 @@ func (f *fakeClient) calls() []string {
 	return append([]string(nil), f.scoreCalls...)
 }
 
+func (f *fakeClient) replaysCalled() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int64(nil), f.replayCalls...)
+}
+
 func (f *fakeClient) reset() {
 	f.mu.Lock()
 	f.scoreCalls, f.replayCalls = nil, nil

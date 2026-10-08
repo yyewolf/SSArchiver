@@ -55,6 +55,7 @@ type Worker struct {
 	mu     sync.RWMutex
 	status Status
 
+	lastReplayPlayer   string
 	lastBackfillPlayer string
 	lastPrune          time.Time
 }
@@ -87,6 +88,12 @@ func (w *Worker) Status() Status {
 
 // Run loops until ctx is cancelled.
 func (w *Worker) Run(ctx context.Context) error {
+	if res, err := w.svc.ReconcileStorage(ctx); err != nil {
+		w.svc.Log(ctx, model.SyncEvent{Level: model.LevelError, Kind: model.KindWorker, Message: "storage reconciliation failed: " + err.Error()})
+	} else if res.Changed() {
+		w.svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, Message: fmt.Sprintf(
+			"storage reconciled: %d adopted, %d re-queued, %d temp files removed, %d orphan files kept", res.Adopted, res.Requeued, res.RemovedTmp, res.Orphans)})
+	}
 	for {
 		if ctx.Err() != nil {
 			w.setStatus(StateStopped, "")
@@ -127,6 +134,12 @@ func (w *Worker) Step(ctx context.Context) (did bool, err error) {
 	if p != nil {
 		return true, w.poll(ctx, p)
 	}
+	if sc, err := w.svc.NextReplay(ctx, service.TierNew, w.lastReplayPlayer); err != nil {
+		return false, err
+	} else if sc != nil {
+		w.lastReplayPlayer = sc.PlayerID
+		return true, w.download(ctx, sc)
+	}
 	bp, err := w.svc.NextBackfillPlayer(ctx, w.lastBackfillPlayer)
 	if err != nil {
 		return false, err
@@ -134,6 +147,12 @@ func (w *Worker) Step(ctx context.Context) (did bool, err error) {
 	if bp != nil {
 		w.lastBackfillPlayer = bp.ID
 		return true, w.backfill(ctx, bp)
+	}
+	if sc, err := w.svc.NextReplay(ctx, service.TierBackfill, w.lastReplayPlayer); err != nil {
+		return false, err
+	} else if sc != nil {
+		w.lastReplayPlayer = sc.PlayerID
+		return true, w.download(ctx, sc)
 	}
 	return false, nil
 }
