@@ -52,6 +52,7 @@ jobs:
           case "$bump" in
             major) major=$((major + 1)); minor=0; patch=0 ;;
             minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
           esac
           tag="v$major.$minor.$patch"
           echo "Bumping $bump: ${latest:-none} -> $tag"
