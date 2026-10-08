@@ -6,7 +6,7 @@
 
 **Architecture:** One `internal/service` layer (GORM + gorm gen over SQLite) is consumed by three thin front-ends: a templ/htmx web UI, a huma JSON API, and an in-process `archiver` worker that polls ScoreSaber under a strict client-side rate limiter and stores replays on disk. Everything ships as one static binary (ArcViewer embedded gzip'd) and a `FROM scratch`, rootless container image released by goreleaser with cosign signatures and SLSA provenance.
 
-**Tech Stack:** Go 1.26 · cobra · net/http `ServeMux` · huma v2 (humago adapter) · templ · htmx 2 · shadcn-templ v2 (shadcn/ui port) · Tailwind v4 standalone CLI · GORM + gorm gen · `github.com/glebarez/sqlite` (pure Go) · argon2id · golangci-lint v2 · goreleaser v2 · GitHub Actions · cosign · `actions/attest-build-provenance`.
+**Tech Stack:** Go 1.27 · cobra · net/http `ServeMux` · huma v2 (humago adapter) · templ · htmx 2 · shadcn-templ v2 (shadcn/ui port) · Tailwind v4 standalone CLI · GORM + gorm gen · `github.com/glebarez/sqlite` (pure Go) · argon2id · golangci-lint v2 · goreleaser v2 · GitHub Actions · cosign · `actions/attest-build-provenance`.
 
 **Spec:** [`docs/superpowers/specs/2026-10-08-ssarchiver-design.md`](../specs/2026-10-08-ssarchiver-design.md) — read it before starting any task. Section numbers below (e.g. "spec §6.2") refer to it.
 
@@ -14,7 +14,7 @@
 
 Every task's requirements implicitly include all of these.
 
-- Module path `github.com/yyewolf/ssarchiver`; `go 1.26` in `go.mod`. Container image `ghcr.io/yyewolf/ssarchiver`.
+- Module path `github.com/yyewolf/ssarchiver`; `go 1.27` in `go.mod`. Container image `ghcr.io/yyewolf/ssarchiver`.
 - Pinned versions (do not "upgrade while you're there"):
   - `github.com/spf13/cobra v1.10.2`, `github.com/danielgtaylor/huma/v2 v2.39.1`, `github.com/a-h/templ v0.3.1070`
   - `gorm.io/gorm v1.31.2`, `gorm.io/gen v0.3.29`, `github.com/glebarez/sqlite v1.11.0`
@@ -64,7 +64,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 | # | Task | Status | Owner | Started | Commit |
 |---|------|--------|-------|---------|--------|
-| 1 | Project bootstrap (go.mod, cobra, config, lint, Makefile) | ⬜ todo | | | |
+| 1 | Project bootstrap (go.mod, cobra, config, lint, Makefile) | ✅ done | kilo (euria-code) | 2026-10-08 | 7bab24d |
 | 2 | Models, SQLite, gorm gen | ⬜ todo | | | |
 | 3 | ScoreSaber rate limiter | ⬜ todo | | | |
 | 4 | ScoreSaber client | ⬜ todo | | | |
@@ -86,22 +86,27 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ —
-_Next step:_ Task 1, Step 1
-_Half-done / uncommitted:_ —
-_Notes for next agent:_ —
+_Current task:_ Task 1 done (commit 7bab24d)
+_Next step:_ Task 2 Step 1 (models)
+_Half-done / uncommitted:_ plan file updates for Task 1 (committed in the docs commit that lands with this edit)
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction (see Deviations log); GOTOOLCHAIN=auto downloads go1.27.0. `make lint` runs golangci-lint v2.14.0 via `go run` (downloads on first use).
 
 ### Deviations log
 
 | Date | Task | Deviation | Reason | Later tasks updated? |
 |------|------|-----------|--------|----------------------|
-| | | | | |
+| 2026-10-08 | 1 | `go.mod` uses `go 1.27` instead of `go 1.26` (Tech Stack + Global Constraints updated) | User instruction: "use go 1.27" | Yes — plan header/constraints updated |
+| 2026-10-08 | 1 | `internal/cli/version.go` discards the `fmt.Fprintf` return (`_, _ =`) | golangci-lint v2.14.0 errcheck rejects the unchecked call | No |
 
 ### Verification log
 
 | Date | Task | Command(s) | Result |
 |------|------|------------|--------|
-| | | | |
+| 2026-10-08 | 1 | `go test ./internal/config/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 1 | `go test ./internal/config/...` | ok |
+| 2026-10-08 | 1 | `go test ./... && CGO_ENABLED=0 go build -o /dev/null ./cmd/ssarchiver` | all ok, build succeeds |
+| 2026-10-08 | 1 | `make lint` (after `_, _ = fmt.Fprintf` fix) | 0 issues. |
+| 2026-10-08 | 1 | `go build ./... && go test ./...` (go 1.27.0) | all ok |
 
 ---
 
@@ -158,7 +163,7 @@ README.md, THIRD_PARTY_NOTICES.md
   - `buildinfo.Version`, `buildinfo.Commit`, `buildinfo.Date` (string vars), `buildinfo.UserAgent() string`
   - `cli.NewRootCmd() *cobra.Command` (root holds `cfg *config.Config` shared with subcommands via `newXCmd(cfg)` constructors), `cli.Execute(ctx) int`
 
-- [ ] **Step 1: Initialise the module and dependencies**
+- [x] **Step 1: Initialise the module and dependencies**
 
 ```bash
 go mod init github.com/yyewolf/ssarchiver
@@ -167,7 +172,7 @@ go get github.com/spf13/cobra@v1.10.2
 go get golang.org/x/crypto/x509roots/fallback@latest
 ```
 
-- [ ] **Step 2: Write the failing config tests** — `internal/config/config_test.go`
+- [x] **Step 2: Write the failing config tests** — `internal/config/config_test.go`
 
 ```go
 package config_test
@@ -265,12 +270,12 @@ func TestParseLogLevel(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `go test ./internal/config/...`
 Expected: FAIL — `package github.com/yyewolf/ssarchiver/internal/config` has no non-test Go files / undefined: `config.FromEnv`.
 
-- [ ] **Step 4: Implement config** — `internal/config/config.go`
+- [x] **Step 4: Implement config** — `internal/config/config.go`
 
 ```go
 // Package config loads SSArchiver's runtime configuration from the
@@ -385,12 +390,12 @@ func envInt(key string, def int) int {
 }
 ```
 
-- [ ] **Step 5: Run config tests**
+- [x] **Step 5: Run config tests**
 
 Run: `go mod tidy && go test ./internal/config/...`
 Expected: `ok  github.com/yyewolf/ssarchiver/internal/config`
 
-- [ ] **Step 6: Write the failing CLI test** — `internal/cli/root_test.go`
+- [x] **Step 6: Write the failing CLI test** — `internal/cli/root_test.go`
 
 ```go
 package cli_test
@@ -417,7 +422,7 @@ func TestVersionCommand(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Implement buildinfo, root, version, main**
+- [x] **Step 7: Implement buildinfo, root, version, main**
 
 `internal/buildinfo/buildinfo.go`:
 
@@ -529,12 +534,12 @@ func main() {
 }
 ```
 
-- [ ] **Step 8: Run tests and build**
+- [x] **Step 8: Run tests and build**
 
 Run: `go mod tidy && go test ./... && CGO_ENABLED=0 go build -o /dev/null ./cmd/ssarchiver`
 Expected: all `ok`, build succeeds.
 
-- [ ] **Step 9: Add lint config, Makefile, .gitignore**
+- [x] **Step 9: Add lint config, Makefile, .gitignore**
 
 `.golangci.yml`:
 
@@ -623,7 +628,7 @@ internal/viewer/dist/*
 !internal/viewer/dist/PLACEHOLDER
 ```
 
-- [ ] **Step 10: Lint**
+- [x] **Step 10: Lint**
 
 Run: `make lint`
 Expected: `0 issues.` Fix anything reported (typically formatting: run `$(GOLANGCI) fmt`).
