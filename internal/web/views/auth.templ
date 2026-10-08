@@ -1,0 +1,92 @@
+package views
+
+import (
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/card"
+	"github.com/yyewolf/ssarchiver/internal/web/components/field"
+	"github.com/yyewolf/ssarchiver/internal/web/components/input"
+)
+
+type AuthForm struct {
+	Username string
+	Next     string
+	Error    string
+}
+
+templ authCard(title, desc string) {
+	<div class="mx-auto flex w-full max-w-sm flex-col pt-8">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					{ title }
+				}
+				@card.Description() {
+					{ desc }
+				}
+			}
+			@card.Content() {
+				{ children... }
+			}
+		}
+	</div>
+}
+
+templ Setup(p Page, f AuthForm) {
+	@Layout(p) {
+		@authCard("Set up SSArchiver", "Create the admin account. You can add players right after.") {
+			<form method="post" action="/setup" class="flex flex-col gap-4">
+				@FormError(f.Error)
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "username"}) {
+						Username
+					}
+					@input.Input(input.Props{ID: "username", Name: "username", Value: f.Username, Required: true, Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "password"}) {
+						Password
+					}
+					@input.Input(input.Props{ID: "password", Name: "password", Type: "password", Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "10"}})
+					@field.Description() {
+						At least 10 characters.
+					}
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "confirm"}) {
+						Confirm password
+					}
+					@input.Input(input.Props{ID: "confirm", Name: "confirm", Type: "password", Required: true, Attributes: templ.Attributes{"autocomplete": "new-password"}})
+				}
+				@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+					Create admin account
+				}
+			</form>
+		}
+	}
+}
+
+templ Login(p Page, f AuthForm) {
+	@Layout(p) {
+		@authCard("Log in", "Administration of this archive.") {
+			<form method="post" action="/login" class="flex flex-col gap-4">
+				@FormError(f.Error)
+				<input type="hidden" name="next" value={ f.Next }/>
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "username"}) {
+						Username
+					}
+					@input.Input(input.Props{ID: "username", Name: "username", Value: f.Username, Required: true, Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
+				}
+				@field.Field() {
+					@field.Label(field.LabelProps{For: "password"}) {
+						Password
+					}
+					@input.Input(input.Props{ID: "password", Name: "password", Type: "password", Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
+				}
+				@button.Button(button.Props{Type: button.TypeSubmit, Class: "w-full"}) {
+					Log in
+				}
+			</form>
+		}
+	}
+}

@@ -53,6 +53,11 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("/viewer/", h.viewer)
 	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /{$}", h.home)
+	mux.HandleFunc("GET /setup", h.setupForm)
+	mux.HandleFunc("POST /setup", h.setupSubmit)
+	mux.HandleFunc("GET /login", h.loginForm)
+	mux.HandleFunc("POST /login", h.loginSubmit)
+	mux.HandleFunc("POST /logout", h.logout)
 }
 
 // Middleware wraps the whole mux (UI and API).
@@ -122,6 +127,7 @@ func redirect(w http.ResponseWriter, r *http.Request, url string) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	// #nosec G710 -- callers pass constants or paths validated by safeNext
 	http.Redirect(w, r, url, http.StatusSeeOther)
 }
 
