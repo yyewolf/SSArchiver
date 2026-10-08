@@ -37,5 +37,7 @@ go.work.sum
 /data/
 /dist/
 /.docker-ctx/
+/docker/data/*
+!/docker/data/.keep
 internal/viewer/dist/*
 !internal/viewer/dist/PLACEHOLDER
