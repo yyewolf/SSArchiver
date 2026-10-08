@@ -67,7 +67,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 1 | Project bootstrap (go.mod, cobra, config, lint, Makefile) | ✅ done | kilo (euria-code) | 2026-10-08 | 7bab24d |
 | 2 | Models, SQLite, gorm gen | ✅ done | kilo (euria-code) | 2026-10-08 | 6a44ea8 |
 | 3 | ScoreSaber rate limiter | ✅ done | kilo (euria-code) | 2026-10-08 | 3f13084 |
-| 4 | ScoreSaber client | ⬜ todo | | | |
+| 4 | ScoreSaber client | ✅ done | kilo (euria-code) | 2026-10-08 | ca78f43 |
 | 5 | Replay blob storage | ⬜ todo | | | |
 | 6 | Service: players, scores, replay queue, events log | ⬜ todo | | | |
 | 7 | Service: auth, sessions, settings, events listing | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 3 done (commit 3f13084)
-_Next step:_ Task 4 Step 1 (ScoreSaber client fixtures)
+_Current task:_ Task 4 done (commits ca78f43 + 7513419)
+_Next step:_ Task 5 Step 1 (storage tests)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's transitives were bumped (dbresolver 1.6.2, x/tools 0.51.0) to compile under gorm v1.31.2 + Go 1.27 — see Deviations log. Limiter tests use testing/synctest (works on go 1.27).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Live smoke test (`go test -tags live -run Live ./internal/scoresaber`) uses the owner's profile 76561198038925092 and passes.
 
 ### Deviations log
 
@@ -98,6 +98,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's tra
 | 2026-10-08 | 1 | `go.mod` uses `go 1.27` instead of `go 1.26` (Tech Stack + Global Constraints updated) | User instruction: "use go 1.27" | Yes — plan header/constraints updated |
 | 2026-10-08 | 1 | `internal/cli/version.go` discards the `fmt.Fprintf` return (`_, _ =`) | golangci-lint v2.14.0 errcheck rejects the unchecked call | No |
 | 2026-10-08 | 2 | Bumped transitive deps `gorm.io/plugin/dbresolver` 1.5.3→1.6.2 and `golang.org/x/tools` →v0.51.0 (x/mod, x/sys follow) | gen v0.3.29's pinned transitives don't compile with gorm v1.31.2 (`undefined: gorm.Stmt`) / Go 1.27 (x/tools tokeninternal); gen/gorm/sqlite stay at pinned versions | No |
+| 2026-10-08 | 4 | Live smoke test uses player id `76561198038925092` instead of `1922350521131465` | User asked their own profile be used for tests | No |
 
 ### Verification log
 
@@ -115,6 +116,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen's tra
 | 2026-10-08 | 3 | `go test ./internal/scoresaber/...` (pre-impl) | FAIL: undefined: NewLimiter (expected) |
 | 2026-10-08 | 3 | `go test -race ./internal/scoresaber/...` | ok |
 | 2026-10-08 | 3 | `go build ./... && go test ./... && make lint` | all ok, 0 issues. |
+| 2026-10-08 | 4 | `go test ./internal/scoresaber/...` (pre-impl) | FAIL: undefined: scoresaber.ErrRateLimited/StatusError (expected) |
+| 2026-10-08 | 4 | `go test -race ./internal/scoresaber/... && go vet -tags live ./internal/scoresaber/...` | ok, vet clean |
+| 2026-10-08 | 4 | `go test -tags live -run Live ./internal/scoresaber -v` | PASS (real API, player 76561198038925092) |
+| 2026-10-08 | 4 | `make lint` (after errcheck/gofumpt fixes, commit 7513419) | 0 issues. |
 
 ---
 
@@ -1441,7 +1446,7 @@ git commit -m "feat: add ScoreSaber client-side rate limiter"
   - Errors: `scoresaber.ErrNotFound`, `scoresaber.ErrRateLimited`, `*scoresaber.StatusError{StatusCode int; Body string}`
   - `scoresaber.ScoresPageSize = 100`
 
-- [ ] **Step 1: Add fixtures** (trimmed real responses, spec §2)
+- [x] **Step 1: Add fixtures** (trimmed real responses, spec §2)
 
 `internal/scoresaber/testdata/player.json`:
 
@@ -1460,7 +1465,7 @@ git commit -m "feat: add ScoreSaber client-side rate limiter"
 ],"metadata":{"page":3,"itemsPerPage":100,"totalItems":8372,"totalPages":84}}
 ```
 
-- [ ] **Step 2: Write the failing tests** — `internal/scoresaber/client_test.go`
+- [x] **Step 2: Write the failing tests** — `internal/scoresaber/client_test.go`
 
 ```go
 package scoresaber_test
@@ -1614,12 +1619,12 @@ func TestMalformedJSON(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `go test ./internal/scoresaber/...`
 Expected: FAIL — `undefined: scoresaber.NewClient`.
 
-- [ ] **Step 4: Implement types** — `internal/scoresaber/types.go`
+- [x] **Step 4: Implement types** — `internal/scoresaber/types.go`
 
 ```go
 package scoresaber
@@ -1702,7 +1707,7 @@ type Realm struct {
 }
 ```
 
-- [ ] **Step 5: Implement the client** — `internal/scoresaber/client.go`
+- [x] **Step 5: Implement the client** — `internal/scoresaber/client.go`
 
 ```go
 package scoresaber
@@ -1851,7 +1856,7 @@ func drain(resp *http.Response) {
 }
 ```
 
-- [ ] **Step 6: Add the opt-in live smoke test** — `internal/scoresaber/live_test.go`
+- [x] **Step 6: Add the opt-in live smoke test** — `internal/scoresaber/live_test.go`
 
 ```go
 //go:build live
@@ -1880,12 +1885,12 @@ func TestLiveScoreSaber(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run: `go test -race ./internal/scoresaber/... && go vet -tags live ./internal/scoresaber/...`
 Expected: `ok`; vet clean.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 make lint
