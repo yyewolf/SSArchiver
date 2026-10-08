@@ -77,7 +77,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 5970ec8 |
 | 12 | Web auth (setup, login, logout) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | e358394 |
 | 13 | Public player & score pages | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | b1fdf42 |
-| 14 | Replay download & embed endpoints | ⬜ todo | | | |
+| 14 | Replay download & embed endpoints | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | f4cd83c |
 | 15 | Admin: players & settings | ⬜ todo | | | |
 | 16 | Admin: sync status page | ⬜ todo | | | |
 | 17 | huma JSON API | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 13 done (commit b1fdf42; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 14 Step 1 (replay download & embed endpoints)
+_Current task:_ Task 14 done (commit f4cd83c; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 15 Step 1 (admin — players & settings)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation (11), auth (12) and public pages (13) landed; Task 13 added `views/urls.go` helpers + named icon vars (`icon_defs.go` wraps the `icon.Icon(name)` factory). Deviations log has the standing lint-driven tweaks. Next: replay endpoints (14), admin (15-16), API (17), wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages all landed (11-14): foundation, auth, public player/score pages, replay download+embed. Standing lint-driven tweaks are in the Deviations log; icons via `icon.Icon(name)` factory with named vars in `icon_defs.go`. Next: admin players/settings (15), sync status (16), API (17), wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -115,6 +115,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation
 | 2026-10-08 | 12 | `#nosec G710` on the pre-existing `redirect` helper | gosec taint analyzer cannot recognize `safeNext` validation; all 5 call sites verified constant/safe | No |
 | 2026-10-08 | 12 | Added `auth_internal_test.go` (`TestRequireAdmin`, `TestSafeNext`) | strict `unused` linter rejects `requireAdmin`/`safeNext` without tests (Task 11 precedent) | No |
 | 2026-10-08 | 13 | None — brief followed verbatim; added `icon_defs.go` named vars wrapping the `icon.Icon(name)` factory so the brief's icon snippets compile as written | resolves Task 11's icon-factory ruling inside Task 13's snippets | No |
+| 2026-10-08 | 14 | `defer f.Close()` → `defer func() { _ = f.Close() }()` in `replay.go` | errcheck (pinned linter); matches viewer/handler.go precedent | No |
 
 ### Verification log
 
@@ -172,6 +173,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation
 | 2026-10-08 | 13 | `go test ./internal/web/... ./internal/web/views/...` (post-impl) | ok (filters, htmx partial swap, pending-score link hiding, 404s, nil preloads) |
 | 2026-10-08 | 13 | `go test ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 11 packages ok, 0 issues., build OK |
 | 2026-10-08 | 13 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 11 pkgs ok, tree clean |
+| 2026-10-08 | 14 | `go test ./internal/web/` (pre-impl) | FAIL: 404 for /r/… and /embed/… (expected) |
+| 2026-10-08 | 14 | `go test ./internal/web/` (post-impl) | ok (pending/gone/nonexistent ids, Range, HEAD, CORS preflight, frame-ancestors) |
+| 2026-10-08 | 14 | `go test ./... && go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | all green, 0 issues. |
+| 2026-10-08 | 14 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 11 pkgs ok, tree clean |
 
 ---
 
@@ -9094,7 +9099,7 @@ git commit -m "feat: add public player and score pages"
 - Consumes: `service.GetScore`, `(*Service).Store().Open`; `views.ViewerSrc`, `views.SongTitle`; `httpx.EmbedCSP`.
 - Produces: routes `GET /r/{file}` (also answers HEAD), `OPTIONS /r/{file}`, `GET /embed/{id}`; templ `views.Embed(title, src string)`, `views.EmbedUnavailable()`.
 
-- [ ] **Step 1: Write the failing tests** — `internal/web/replay_test.go`
+- [x] **Step 1: Write the failing tests** — `internal/web/replay_test.go`
 
 ```go
 package web_test
@@ -9187,7 +9192,7 @@ func TestEmbed(t *testing.T) {
 
 Run: `go test ./internal/web/ -run 'Replay|Embed'` → FAIL.
 
-- [ ] **Step 2: Write the embed views** — `internal/web/views/embed.templ`
+- [x] **Step 2: Write the embed views** — `internal/web/views/embed.templ`
 
 ```templ
 package views
@@ -9230,7 +9235,7 @@ templ EmbedUnavailable() {
 }
 ```
 
-- [ ] **Step 3: Implement handlers** — `internal/web/replay.go`
+- [x] **Step 3: Implement handlers** — `internal/web/replay.go`
 
 ```go
 package web
@@ -9321,7 +9326,7 @@ Register in `Routes`:
 	mux.HandleFunc("GET /embed/{id}", h.embed)
 ```
 
-- [ ] **Step 4: Generate and test**
+- [x] **Step 4: Generate and test**
 
 ```bash
 go tool templ generate && go test ./internal/web/...
@@ -9329,7 +9334,7 @@ go tool templ generate && go test ./internal/web/...
 
 Expected: `ok`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 make generate && make lint
