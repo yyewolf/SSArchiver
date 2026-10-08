@@ -81,15 +81,15 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 15 | Admin: players & settings | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | c3a309f |
 | 16 | Admin: sync status page | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 58d57d6 |
 | 17 | huma JSON API | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 60baceb |
-| 18 | App wiring, serve/healthcheck/migrate/user commands, e2e test | ⬜ todo | | | |
+| 18 | App wiring, serve/healthcheck/migrate/user commands, e2e test | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 32d49eb (+fix f5cc2f9) |
 | 19 | Packaging: Dockerfile, goreleaser, CI/release workflows, README | ⬜ todo | | | |
 
 ### Session hand-off
 
-_Current task:_ Task 17 done (commit 60baceb; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 18 Step 1 (app wiring, CLI commands, end-to-end test)
+_Current task:_ Task 18 done (commit 32d49eb + idle-state fix f5cc2f9, reviewed and re-reviewed clean) — all 19 tasks now complete except Task 19
+_Next step:_ Task 19 Step 1 (packaging — Dockerfile, goreleaser, CI/release workflows, README)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI (11-16) + huma API (17) landed; `api.Register` is NOT yet mounted into the real server mux — Task 18 wires it. huma v2.39.1 forced MVS bumps (uuid 1.6.0, pflag 1.0.10, testify 1.11.1, chi, cbor, float16) — all from huma's own go.mod graph. Standing lint-driven tweaks in Deviations log. Next: wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Everything is wired: `internal/app` glues db/service/archiver/viewer/web/api; `cmd/ssarchiver` has serve/healthcheck/migrate/user commands; full-stack e2e test passes. Pre-existing bug found during QA and fixed+re-reviewed: `Worker.idle()` stale Paused badge after resume (f5cc2f9). Browser-only QA items remain for the human: ArcViewer playback, cross-origin embed, light/dark + 375px, 3s refresh flicker. Next: packaging (19), then final whole-branch review.
 
 ### Deviations log
 
@@ -120,6 +120,8 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI (11
 | 2026-10-08 | 16 | None — brief applied verbatim, zero deviations | — | — |
 | 2026-10-08 | 17 | `go get huma@v2.39.1` forced MVS bumps of huma's own requirements: uuid v1.6.0, pflag v1.0.10, testify v1.11.1, chi v5.3.1, cbor v2.9.2, float16 v0.8.4, randomstring v1.2.0 (huma itself stays at v2.39.1) | huma's own go.mod graph; verified against module cache | No |
 | 2026-10-08 | 17 | Tests use `httptest.NewRequestWithContext` (noctx lint); RED output was "no non-test Go files" instead of predicted `undefined: api.Register` | repo precedent; package did not exist yet (same cause) | No |
+| 2026-10-08 | 18 | e2e add-player failure path reads the response body (better diagnostics than brief's latent nil-deref); app_test log suppression mirrors serve's logging config | test robustness, behavior-preserving | No |
+| 2026-10-08 | 18 | Fixed pre-existing bug found during QA: `Worker.idle()` kept a stale `StatePaused` snapshot after resume, so the sync badge stayed "Paused" (commit f5cc2f9, `TestResumeTransitionsToIdle` RED→GREEN, re-reviewed clean) | worker code from Tasks 8/9; badge renders Status().State | Yes — worker.go now derives paused state from current settings |
 
 ### Verification log
 
@@ -193,6 +195,12 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI (11
 | 2026-10-08 | 17 | `go test ./internal/api/...` (post-impl) | ok (unauth 401s on all 7 admin ops, error mapping 404/409/422, pagination cap, replay URLs, OpenAPI json) |
 | 2026-10-08 | 17 | `go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 12 packages ok, 0 issues., build OK |
 | 2026-10-08 | 17 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 12 pkgs ok, tree clean |
+| 2026-10-08 | 18 | `go test ./internal/app/... ./internal/cli/...` (pre-impl) | FAIL (expected) |
+| 2026-10-08 | 18 | `go test ./internal/app/... ./internal/cli/...` (post-impl) | ok (full-stack e2e: setup→login→add player→budget/queue, healthcheck exit codes, migrate idempotence, user command incl. weak-password rejection) |
+| 2026-10-08 | 18 | live QA (headless): serve → curl home/setup/login/admin/sync, pause→restart→stays paused→resume persisted, SIGINT exit-0 in ~14 ms | server-side flows verified; browser-only items deferred to human |
+| 2026-10-08 | 18 | `go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 13 packages ok, 0 issues., build OK |
+| 2026-10-08 | 18 | fix commit f5cc2f9: `go test -race ./internal/archiver/... ./internal/web/...`, full suite, `make lint` | TestResumeTransitionsToIdle RED→GREEN, all ok, 0 issues. |
+| 2026-10-08 | 18 | controller spot-checks post-review+fix: `make lint`, `go test ./...`, `git status` | 0 issues., 13 pkgs ok, tree clean |
 
 ---
 
@@ -11786,7 +11794,7 @@ git commit -m "feat: add huma JSON API with OpenAPI docs"
   - CLI: `ssarchiver serve`, `ssarchiver healthcheck`, `ssarchiver migrate`, `ssarchiver user reset-password [--username]` (password from stdin; prompts without echo on a TTY), `ssarchiver version`
   - `cli.healthURL(listen string) string`
 
-- [ ] **Step 1: Write the failing end-to-end test** — `internal/app/app_test.go`
+- [x] **Step 1: Write the failing end-to-end test** — `internal/app/app_test.go`
 
 ```go
 package app_test
@@ -11934,7 +11942,7 @@ func TestEndToEnd(t *testing.T) {
 
 Run: `go test ./internal/app/...` → FAIL (`undefined: app.New`).
 
-- [ ] **Step 2: Implement the app** — `internal/app/app.go`
+- [x] **Step 2: Implement the app** — `internal/app/app.go`
 
 ```go
 // Package app wires SSArchiver's components together.
@@ -12033,7 +12041,7 @@ func (a *App) Serve(ctx context.Context, ln net.Listener) error {
 
 Run: `go get golang.org/x/sync@v0.23.0 && go test ./internal/app/...` → `ok` (the test uses the PLACEHOLDER-only bundle if you have not generated the viewer; `/s/777` still renders, showing the "viewer unavailable" alert).
 
-- [ ] **Step 3: Write the failing CLI tests** — `internal/cli/commands_test.go`
+- [x] **Step 3: Write the failing CLI tests** — `internal/cli/commands_test.go`
 
 ```go
 package cli
@@ -12134,7 +12142,7 @@ func TestResetPasswordCommand(t *testing.T) {
 
 Run: `go test ./internal/cli/...` → FAIL.
 
-- [ ] **Step 4: Implement the commands**
+- [x] **Step 4: Implement the commands**
 
 `internal/cli/serve.go`:
 
@@ -12371,7 +12379,7 @@ go test -race ./internal/cli/... ./internal/app/...
 
 Expected: `ok`.
 
-- [ ] **Step 5: Add run/dev targets** — append to `Makefile`:
+- [x] **Step 5: Add run/dev targets** — append to `Makefile`:
 
 ```make
 .PHONY: run dev
@@ -12400,7 +12408,7 @@ Then, at `http://localhost:8080`:
 
 If step 4 fails, capture the browser console output and the `/viewer/` network requests, and log it under **Session hand-off** — do not change the design without asking.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 make generate && make lint && go test -race ./...
