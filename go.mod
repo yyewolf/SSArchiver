@@ -6,9 +6,10 @@ require (
 	github.com/Oudwins/tailwind-merge-go v0.2.3
 	github.com/a-h/templ v0.3.1070
 	github.com/alexedwards/argon2id v1.0.0
+	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/glebarez/sqlite v1.11.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261005185213-c3db4df58582
 	gorm.io/gen v0.3.29
 	gorm.io/gorm v1.31.2
@@ -26,7 +27,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

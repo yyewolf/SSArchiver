@@ -22,8 +22,9 @@ const SessionCookie = "ssa_session"
 const (
 	// EmbedCSP: the embed page only frames the same-origin viewer and may itself be framed anywhere.
 	EmbedCSP = "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; frame-ancestors *"
-	// DocsCSP: huma's docs page loads its renderer from unpkg.
-	DocsCSP = "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; " +
+	// DocsCSP: huma's docs page loads its renderer from a CDN.
+	DocsCSP = "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; " +
+		"style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; " +
 		"img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'"
 )
 
