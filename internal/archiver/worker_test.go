@@ -37,6 +37,35 @@ func TestPausedWorkerDoesNothing(t *testing.T) {
 	}
 }
 
+func TestResumeTransitionsToIdle(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- e.w.Run(ctx) }()
+
+	if err := e.svc.SetWorkerPaused(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return e.w.Status().State == archiver.StatePaused })
+
+	// Resume: nothing is due, so Step does nothing and idle() runs again;
+	// it must not preserve the stale Paused snapshot.
+	if err := e.svc.SetWorkerPaused(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return e.w.Status().State != archiver.StatePaused })
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not stop after cancel")
+	}
+}
+
 func TestRunWakesAndStops(t *testing.T) {
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(context.Background())

@@ -161,6 +161,9 @@ func (w *Worker) idle(ctx context.Context) {
 	w.mu.RLock()
 	paused := w.status.State == StatePaused
 	w.mu.RUnlock()
+	if st, err := w.svc.Settings(ctx); err == nil {
+		paused = st.WorkerPaused
+	}
 	if !paused {
 		w.setStatus(StateIdle, "")
 	}
