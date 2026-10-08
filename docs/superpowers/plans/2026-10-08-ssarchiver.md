@@ -71,7 +71,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 5 | Replay blob storage | ✅ done | kilo (euria-code) | 2026-10-08 | 1dac253 |
 | 6 | Service: players, scores, replay queue, events log | ✅ done | kilo (euria-code) | 2026-10-08 | 1a38195 |
 | 7 | Service: auth, sessions, settings, events listing | ✅ done | kilo (euria-code) | 2026-10-08 | f1880fc |
-| 8 | Archiver: poll, backfill, loop | ⬜ todo | | | |
+| 8 | Archiver: poll, backfill, loop | ✅ done | kilo (euria-code) | 2026-10-08 | a6eead1 |
 | 9 | Archiver: replay download, reconciliation, status | ⬜ todo | | | |
 | 10 | Embedded ArcViewer | ⬜ todo | | | |
 | 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 7 done (commit f1880fc)
-_Next step:_ Task 8 Step 1 (archiver fake client)
+_Current task:_ Task 8 done (commit a6eead1)
+_Next step:_ Task 9 Step 1 (reconcile test)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). All service-layer tasks (6-7) passed as written. Next big milestone: archiver worker (Tasks 8-9).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. NOTE: `Worker.lastReplayPlayer` and `fakeClient.replaysCalled()` were removed in Task 8 to satisfy the pinned `unused` linter — Task 9 must re-add them (they are referenced by Task 9's Step replay tiers and download tests).
 
 ### Deviations log
 
@@ -103,6 +103,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 5 | `Store.Scan` removes `.tmp` via `os.Root` scoped to the store root; added `_ =` discards on `Close` | gosec G122 (TOCTOU) + errcheck under pinned linter; behaviour unchanged | No |
 | 2026-10-08 | 6 | None — plan code compiled and passed as written (gen `GteCol`/`LtCol` and `Update(col, nil)` worked; `Preload(q.Score.Leaderboard)` relation present) | — | — |
 | 2026-10-08 | 7 | None — plan code compiled and passed as written (incl. concurrent setup race via `_txlock=immediate`) | — | — |
+| 2026-10-08 | 8 | `Worker.lastReplayPlayer` field and `fakeClient.replaysCalled()` removed in Task 8 (re-added by Task 9) | pinned `unused` linter rejects members only used by Task 9 | Yes — Task 9 must re-add them |
 
 ### Verification log
 
@@ -133,6 +134,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 7 | `go test ./internal/service/...` (pre-impl) | FAIL: pruneEvents undefined (expected) |
 | 2026-10-08 | 7 | `go mod tidy && go test -race ./internal/service/...` | ok (auth incl. concurrent setup, settings, events) |
 | 2026-10-08 | 7 | `go test ./... && make lint` | all ok, 0 issues. |
+| 2026-10-08 | 8 | `go test ./internal/archiver/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 8 | `go test -race ./internal/archiver/...` | ok (poll/backfill/loop tests) |
+| 2026-10-08 | 8 | `go test ./... && make lint` (after removing Task-9-only members) | all ok, 0 issues. |
 
 ---
 
@@ -4553,7 +4557,7 @@ Poll rules:
 
 Backfill rules: fetch page `BackfillPage`; set state `running`; upsert; if the page is empty or `page >= TotalPages` → `done` (log `info`/`backfill` "backfill listing complete"), else advance to `page+1`. Errors: rate limited → log only; 404 → disable player; other → `DeferBackfill(now+BackfillRetryDelay)`.
 
-- [ ] **Step 1: Write the fake client** — `internal/archiver/fake_test.go`
+- [x] **Step 1: Write the fake client** — `internal/archiver/fake_test.go`
 
 ```go
 package archiver_test
@@ -4696,7 +4700,7 @@ func (e *env) drain(t *testing.T, max int) {
 }
 ```
 
-- [ ] **Step 2: Write the failing poll/backfill tests** — `internal/archiver/poll_test.go`
+- [x] **Step 2: Write the failing poll/backfill tests** — `internal/archiver/poll_test.go`
 
 ```go
 package archiver_test
@@ -4868,7 +4872,7 @@ func TestBackfillErrorDefers(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write the failing worker tests** — `internal/archiver/worker_test.go`
+- [x] **Step 3: Write the failing worker tests** — `internal/archiver/worker_test.go`
 
 ```go
 package archiver_test
@@ -4933,12 +4937,12 @@ func TestRunWakesAndStops(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `go test ./internal/archiver/...`
 Expected: FAIL — `undefined: archiver.New`.
 
-- [ ] **Step 5: Implement the worker loop** — `internal/archiver/worker.go`
+- [x] **Step 5: Implement the worker loop** — `internal/archiver/worker.go`
 
 ```go
 // Package archiver is the background worker that polls ScoreSaber, walks
@@ -5127,7 +5131,7 @@ func (w *Worker) maybePrune(ctx context.Context) {
 }
 ```
 
-- [ ] **Step 6: Implement poll/backfill** — `internal/archiver/poll.go`
+- [x] **Step 6: Implement poll/backfill** — `internal/archiver/poll.go`
 
 ```go
 package archiver
@@ -5259,12 +5263,12 @@ func (w *Worker) clientError(ctx context.Context, p *model.Player, err error, po
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run: `go test -race ./internal/archiver/...`
 Expected: `ok`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 make lint
