@@ -95,6 +95,12 @@ make run        # build and serve on :8080 with ./data
 make dev        # templ watch + live reload proxy
 ```
 
+## Automation
+
+Renovate keeps dependencies updated (install the [Renovate GitHub App](https://developer.mend.io/github) to activate it): patch and minor updates auto-merge once CI is green after a 3-day release age, grouped per ecosystem; major updates wait for approval on the dependency dashboard.
+
+Every push to `main` is auto-tagged from Conventional Commits — `feat:` bumps the minor version, everything else the patch, `!` or a `BREAKING CHANGE` footer the major — and the tag triggers the signed release workflow (archives, SBOMs, cosign bundles, SLSA attestations, `ghcr.io` image). A prerelease tag such as `v0.1.0-rc.1` pushed manually is treated as its base version for the next bump.
+
 ## License
 
 BSD 3-Clause. Bundled ArcViewer is GPL-3.0; see `THIRD_PARTY_NOTICES.md`.

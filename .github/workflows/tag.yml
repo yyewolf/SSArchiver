@@ -1,0 +1,74 @@
+name: Auto tag
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the version tag
+  actions: write  # dispatch the release workflow
+
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Compute next version tag
+        id: ver
+        run: |
+          set -euo pipefail
+          latest=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          if [ -z "$latest" ]; then
+            major=0 minor=0 patch=0
+            range=HEAD
+          else
+            base=${latest#v}
+            base=${base%%-*} # strip a manual prerelease suffix such as -rc.1
+            IFS=. read -r major minor patch <<<"$base"
+            range="$latest..HEAD"
+          fi
+          subjects=$(git log "$range" --format=%s --no-merges)
+          if [ -z "$subjects" ]; then
+            echo "No commits since ${latest:-the beginning} — nothing to tag."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bump=patch
+          bodies=$(git log "$range" --format=%B --no-merges)
+          if printf '%s\n' "$subjects" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
+            || printf '%s\n' "$bodies" | grep -qiE '^BREAKING[ -]CHANGE:'; then
+            bump=major
+          elif printf '%s\n' "$subjects" | grep -qE '^feat(\([^)]*\))?:'; then
+            bump=minor
+          fi
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+          esac
+          tag="v$major.$minor.$patch"
+          echo "Bumping $bump: ${latest:-none} -> $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Push tag
+        if: steps.ver.outputs.tag != ''
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+      - name: Trigger release workflow
+        if: steps.ver.outputs.tag != ''
+        run: gh workflow run release.yml --ref "$TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
