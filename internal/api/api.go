@@ -37,10 +37,12 @@ func Register(mux *http.ServeMux, svc *service.Service, status StatusSource, ver
 		"session": {Type: "apiKey", In: "cookie", Name: httpx.SessionCookie},
 	}
 	a := &API{svc: svc, status: status}
-	a.api = humago.New(mux, cfg)
+	inner := http.NewServeMux()
+	a.api = humago.New(inner, cfg)
 	a.registerPlayers()
 	a.registerScores()
 	a.registerSync()
+	mux.Handle("/api/", httpx.CORSReads("/api/v1/sync")(inner))
 	return a.api
 }
 

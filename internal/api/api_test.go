@@ -207,3 +207,44 @@ func TestOpenAPIDocument(t *testing.T) {
 		t.Errorf("docs = %d", docs.Code)
 	}
 }
+
+func TestPublicReadsAreCrossOrigin(t *testing.T) {
+	_, h := newAPI(t, false)
+
+	get := func(method, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), method, path, nil)
+		req.Header.Set("Origin", "https://overlay.example.com")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for _, path := range []string{"/api/v1/players", "/api/v1/players/1/scores", "/api/v1/scores/1"} {
+		rec := get(http.MethodGet, path)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("%s GET: Access-Control-Allow-Origin = %q, want *", path, got)
+		}
+	}
+
+	rec := get(http.MethodOptions, "/api/v1/players")
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("OPTIONS /api/v1/players = %d, want 204", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("OPTIONS: Access-Control-Allow-Origin = %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "GET, HEAD, OPTIONS" {
+		t.Errorf("OPTIONS: Access-Control-Allow-Methods = %q, want GET, HEAD, OPTIONS", got)
+	}
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/sync"},
+		{http.MethodOptions, "/api/v1/sync"},
+		{http.MethodOptions, "/api/v1/sync/retry"},
+	} {
+		rec := get(tc.method, tc.path)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("%s %s: Access-Control-Allow-Origin = %q, want none (admin surface)", tc.method, tc.path, got)
+		}
+	}
+}

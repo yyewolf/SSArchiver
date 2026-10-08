@@ -68,7 +68,9 @@ Options: `?autoplay=1`, `?loop=1`, `?ui=0`. Raw files are at
 ## API
 
 JSON API with OpenAPI docs at `/api/docs`. Reads are public; writes use the
-admin session cookie.
+admin session cookie. Public read endpoints send `Access-Control-Allow-Origin: *`
+(preflight `OPTIONS` answered for `GET, HEAD, OPTIONS`); the admin `/api/v1/sync*`
+surface stays same-origin only, and cross-site writes are rejected outright.
 
 ## Admin password reset
 

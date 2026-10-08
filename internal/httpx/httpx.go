@@ -163,3 +163,39 @@ func Logging(next http.Handler) http.Handler {
 		slog.Debug("http", "method", r.Method, "path", r.URL.Path, "status", rec.status, "dur", time.Since(start))
 	})
 }
+
+// CORSReads lets browsers elsewhere read public API responses: GET/HEAD carry
+// Access-Control-Allow-Origin: * and OPTIONS is answered as a read-only
+// preflight. Requests under an exempt prefix (the admin surface) pass through
+// untouched. Writes are not covered: CrossOriginProtection rejects cross-site
+// unsafe methods before this runs.
+func CORSReads(exemptPrefixes ...string) func(http.Handler) http.Handler {
+	exempt := func(path string) bool {
+		for _, p := range exemptPrefixes {
+			if strings.HasPrefix(path, p) {
+				return true
+			}
+		}
+		return false
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if exempt(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodOptions:
+				hd := w.Header()
+				hd.Set("Access-Control-Allow-Origin", "*")
+				hd.Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+				hd.Set("Access-Control-Max-Age", "86400")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			case http.MethodGet, http.MethodHead:
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
