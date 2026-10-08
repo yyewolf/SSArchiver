@@ -60,6 +60,9 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /logout", h.logout)
 	mux.HandleFunc("GET /p/{id}", h.player)
 	mux.HandleFunc("GET /s/{id}", h.score)
+	mux.HandleFunc("GET /r/{file}", h.replayFile)
+	mux.HandleFunc("OPTIONS /r/{file}", h.replayPreflight)
+	mux.HandleFunc("GET /embed/{id}", h.embed)
 }
 
 // Middleware wraps the whole mux (UI and API).
