@@ -13,7 +13,8 @@ import (
 func TestLiveScoreSaber(t *testing.T) {
 	c := scoresaber.NewClient(scoresaber.NewLimiter(10))
 	ctx := context.Background()
-	p, err := c.Player(ctx, "1922350521131465")
+	const livePlayerID = "76561198038925092" // instance owner's profile
+	p, err := c.Player(ctx, livePlayerID)
 	if err != nil || p.Name == "" {
 		t.Fatalf("player: %+v %v", p, err)
 	}

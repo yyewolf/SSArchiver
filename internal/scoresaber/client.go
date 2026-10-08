@@ -43,9 +43,17 @@ type Client struct {
 
 type Option func(*Client)
 
-func WithBaseURL(u string) Option          { return func(c *Client) { c.baseURL = u } }
-func WithHTTPClient(hc *http.Client) Option { return func(c *Client) { c.hc = hc } }
-func WithUserAgent(ua string) Option        { return func(c *Client) { c.userAgent = ua } }
+func WithBaseURL(u string) Option {
+	return func(c *Client) { c.baseURL = u }
+}
+
+func WithHTTPClient(hc *http.Client) Option {
+	return func(c *Client) { c.hc = hc }
+}
+
+func WithUserAgent(ua string) Option {
+	return func(c *Client) { c.userAgent = ua }
+}
 
 // NewClient returns a client whose every request goes through l.
 func NewClient(l *Limiter, opts ...Option) *Client {
@@ -131,7 +139,7 @@ func (c *Client) getJSON(ctx context.Context, path string, q url.Values, out any
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("scoresaber: decode %s: %w", path, err)
 	}
