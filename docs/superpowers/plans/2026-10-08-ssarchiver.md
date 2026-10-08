@@ -73,7 +73,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 7 | Service: auth, sessions, settings, events listing | ✅ done | kilo (euria-code) | 2026-10-08 | f1880fc |
 | 8 | Archiver: poll, backfill, loop | ✅ done | kilo (euria-code) | 2026-10-08 | a6eead1 |
 | 9 | Archiver: replay download, reconciliation, status | ✅ done | kilo (euria-code) | 2026-10-08 | 6aca494 |
-| 10 | Embedded ArcViewer | ⬜ todo | | | |
+| 10 | Embedded ArcViewer | ✅ done | kilo (euria-code) | 2026-10-08 | 83b5059 |
 | 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ⬜ todo | | | |
 | 12 | Web auth (setup, login, logout) | ⬜ todo | | | |
 | 13 | Public player & score pages | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 9 done (commit 6aca494)
-_Next step:_ Task 10 Step 1 (viewer manifest + placeholder)
+_Current task:_ Task 10 done (commit 83b5059)
+_Next step:_ Task 11 Step 1 (shadcn-templ init)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Backend core complete: models, scoresaber client/limiter, storage, service, archiver (poll+backfill+downloads+reconcile). Next: embedded ArcViewer, then web UI.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. ArcViewer bundle generated locally (30 MB, git-ignored except PLACEHOLDER); `make viewer` / `make build` regenerate it. Next: web UI (Tasks 11-16), then API, wiring, packaging.
 
 ### Deviations log
 
@@ -105,6 +105,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 7 | None — plan code compiled and passed as written (incl. concurrent setup race via `_txlock=immediate`) | — | — |
 | 2026-10-08 | 8 | `Worker.lastReplayPlayer` field and `fakeClient.replaysCalled()` removed in Task 8 (re-added by Task 9) | pinned `unused` linter rejects members only used by Task 9 | Yes — Task 9 must re-add them |
 | 2026-10-08 | 9 | Re-added `lastReplayPlayer` + `replaysCalled()` exactly as the plan originally specified; otherwise none | resolves the Task 8 deviation | Yes — deviation resolved |
+| 2026-10-08 | 10 | Lint fixes on plan code: `_ =` discards on deferred `Close`s; `writeGzip` dirs 0o750 + `WriteFile` 0o600 (G301/G306); on-the-fly decompression bounded by `maxViewerFile` = 256 MB (G110); tests use `httptest.NewRequestWithContext` (noctx) | pinned linter v2.14.0; behaviour unchanged | No |
 
 ### Verification log
 
@@ -141,6 +142,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 9 | `go test ./internal/service/... ./internal/archiver/...` (pre-impl) | FAIL: ReconcileStorage/ReconcileResult/replaysCalled undefined (expected) |
 | 2026-10-08 | 9 | `go test -race ./internal/service/... ./internal/archiver/...` | ok (reconcile + download + priority + status tests; Task 8 tests still pass) |
 | 2026-10-08 | 9 | `go test ./... && make lint` | all ok, 0 issues. |
+| 2026-10-08 | 10 | `go test ./internal/viewer/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 10 | `go test -race ./internal/viewer/...` | ok |
+| 2026-10-08 | 10 | `go generate ./internal/viewer` ×2 | dist = 30 MB; second run: "viewer bundle up to date"; git ignores dist/* except PLACEHOLDER |
+| 2026-10-08 | 10 | `go test ./... && make lint` (after lint fixes) | all ok, 0 issues. |
 
 ---
 
@@ -5798,7 +5803,7 @@ git commit -m "feat: download replays with backoff and reconcile storage on star
   - `viewer.NewHandler(fsys fs.FS, version string) *Handler` (an `http.Handler` mounted at `/viewer/`), `(*Handler).Available() bool`
   - Files in the bundle are stored as `<path>.gz` (gzip best compression). `index.html.gz` presence = bundle available.
 
-- [ ] **Step 1: Add the manifest** — `internal/viewer/manifest.txt` (exact content; values verified 2026-10-08)
+- [x] **Step 1: Add the manifest** — `internal/viewer/manifest.txt` (exact content; values verified 2026-10-08)
 
 ```text
 # ArcViewer (https://github.com/AllPoland/ArcViewer, GPL-3.0) WebGL build.
@@ -5834,7 +5839,7 @@ aee49204962fe909ab71efc30250a023d668f36900adee7a259670c2136eb22d c776256497b66f7
 The ArcViewer bundle is generated here by `go generate ./internal/viewer`.
 ```
 
-- [ ] **Step 2: Write the failing tests** — `internal/viewer/viewer_test.go`
+- [x] **Step 2: Write the failing tests** — `internal/viewer/viewer_test.go`
 
 ```go
 package viewer_test
@@ -6012,12 +6017,12 @@ func TestHeadHasNoBody(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `go test ./internal/viewer/...`
 Expected: FAIL — package has no Go files / undefined symbols.
 
-- [ ] **Step 4: Implement** — `internal/viewer/viewer.go`
+- [x] **Step 4: Implement** — `internal/viewer/viewer.go`
 
 ```go
 // Package viewer embeds a pinned build of ArcViewer (© AllPoland, GPL-3.0,
@@ -6235,12 +6240,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `go test -race ./internal/viewer/...`
 Expected: `ok`.
 
-- [ ] **Step 6: Implement the fetcher** — `internal/viewer/fetch/main.go`
+- [x] **Step 6: Implement the fetcher** — `internal/viewer/fetch/main.go`
 
 ```go
 // Command fetch downloads the ArcViewer files listed in manifest.txt,
@@ -6354,7 +6359,7 @@ func writeGzip(path string, data []byte) error {
 }
 ```
 
-- [ ] **Step 7: Generate the real bundle and verify**
+- [x] **Step 7: Generate the real bundle and verify**
 
 ```bash
 go generate ./internal/viewer
@@ -6379,7 +6384,7 @@ build: viewer
 
 (replace the existing `build` target; keep the others).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 make lint && go test ./internal/viewer/...
