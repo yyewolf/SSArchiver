@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 19 done (commit 54c289b) — ALL 19 PLAN TASKS COMPLETE. Final whole-branch review pending.
-_Next step:_ Final whole-branch review, then finishing-a-development-branch (owner decision on push/PR — nothing pushed or tagged in this session).
+_Current task:_ ALL 19 PLAN TASKS COMPLETE + final whole-branch review done (verdict: merge-ready after 2 Important fixes — both landed: f83a624 rightmost-XFF under trust proxy, ebf2dab failed-replays pager; re-reviewed clean; full suite -race 13/13, lint 0 issues).
+_Next step:_ OWNER DECISION on integration — work sits as local commits on `main`; nothing pushed or tagged. Owner pre-push checklist: (1) browser QA of viewer playback/cross-origin embed/themes/375px (server-side flows verified headlessly), (2) push `v0.1.0-rc.1` tag when ready → release workflow builds signed artifacts; verify with `gh attestation verify` + `cosign verify`.
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Packaging verified locally: goreleaser check+snapshot (6 archives, SBOMs, cosign bundles), actionlint clean, container rootless/read-only/healthcheck/viewer-200 (38.9 MB compressed). Pre-push checklist for the OWNER only: (1) verify workflow action SHA↔version pins online, (2) browser QA of viewer playback/embed/themes (server-side flows verified headlessly), (3) push v0.1.0-rc.1 tag + verify attestation/cosign — only with owner go-ahead.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. 29 cosmetic minors deferred (ledger in .superpowers/sdd/2026-10-08-ssarchiver/progress.md); none block merge. README documents the XFF trust model (SSA_TRUST_PROXY takes the rightmost XFF entry).
 
 ### Deviations log
 
@@ -208,6 +208,8 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Packaging veri
 | 2026-10-08 | 19 | container build + run: user 65532, read-only rootfs, /data writable (setup POST 200), healthcheck passing, /viewer 200 post-setup | pass (93.2 MB `docker image ls` is containerd double-count; 38.9 MB compressed) |
 | 2026-10-08 | 19 | `go test -race ./...`, `make lint`, `make generate && git diff --exit-code` | 13 ok, 0 issues., clean |
 | 2026-10-08 | 19 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` + action SHA pins verified via GitHub API | 0 issues., 13 pkgs ok, tree clean, pins match |
+| 2026-10-08 | final | whole-branch review (f7c14b2..8af9ad6, 40 commits): verdict "With fixes" — 2 Important (leftmost-XFF spoofing, missing failed-replays pager) | fixes f83a624 + ebf2dab landed, scoped re-review: both ADDRESSED, no new breakage |
+| 2026-10-08 | final | `go test -race ./...` && `make lint` && `git status` after fix wave | 13 packages ok, 0 issues., tree clean — merge-ready |
 
 ---
 
