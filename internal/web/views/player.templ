@@ -1,0 +1,268 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/web/components/avatar"
+	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/empty"
+	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
+	"github.com/yyewolf/ssarchiver/internal/web/components/input"
+	"github.com/yyewolf/ssarchiver/internal/web/components/nativeselect"
+	"github.com/yyewolf/ssarchiver/internal/web/components/progress"
+	"github.com/yyewolf/ssarchiver/internal/web/components/table"
+)
+
+type PlayerView struct {
+	Player *model.Player
+	Counts service.Counts
+	Scores service.ScoreList
+	Filter service.ScoreFilter
+	Now    time.Time
+}
+
+templ PlayerPage(p Page, v PlayerView) {
+	@Layout(p) {
+		<div class="mb-8 flex flex-wrap items-center gap-4">
+			@avatar.Avatar(avatar.Props{Class: "size-14"}) {
+				@avatar.Image(avatar.ImageProps{Src: v.Player.AvatarURL, Alt: v.Player.Name})
+				@avatar.Fallback() {
+					{ Initials(v.Player.Name) }
+				}
+			}
+			<div class="min-w-0 flex-1">
+				<h1 class="truncate text-2xl font-semibold tracking-tight">{ v.Player.Name }</h1>
+				<p class="text-sm text-muted-foreground">
+					{ v.Player.Country } ·
+					<a class="underline-offset-4 hover:underline" href={ templ.SafeURL("https://scoresaber.com/u/" + v.Player.ID) } target="_blank" rel="noopener">ScoreSaber profile</a>
+				</p>
+			</div>
+			<dl class="flex gap-8 text-sm">
+				@stat("Scores", Number(v.Counts.Scores))
+				@stat("Archived", Number(v.Counts.Archived))
+				@stat("Pending", Number(v.Counts.Pending))
+			</dl>
+		</div>
+		if v.Player.BackfillState != model.BackfillDone || v.Counts.Pending > 0 {
+			@archiveProgress(v)
+		}
+		@scoreFilters(v)
+		@ScoreTable(v)
+	}
+}
+
+templ stat(label, value string) {
+	<div class="flex flex-col">
+		<dt class="text-muted-foreground">{ label }</dt>
+		<dd class="text-lg font-semibold tabular-nums">{ value }</dd>
+	</div>
+}
+
+templ archiveProgress(v PlayerView) {
+	<div class="mb-6 flex flex-col gap-2 rounded-lg border p-4">
+		@progress.Progress(progress.Props{Value: int(v.Counts.Archived), Max: max(int(v.Counts.Replays()), 1)}) {
+			@progress.Label() {
+				Archiving replays
+			}
+		}
+		<p class="text-xs text-muted-foreground">
+			{ Number(v.Counts.Archived) } of { Number(v.Counts.Replays()) } replays archived
+			if v.Player.BackfillState != model.BackfillDone {
+				· still listing older scores (page { strconv.Itoa(v.Player.BackfillPage) } of { strconv.Itoa(max(v.Player.BackfillTotalPages, v.Player.BackfillPage)) })
+			}
+		</p>
+	</div>
+}
+
+templ scoreFilters(v PlayerView) {
+	<form
+		id="score-filters"
+		action={ templ.SafeURL("/p/" + v.Player.ID) }
+		method="get"
+		class="mb-4 flex flex-wrap items-center gap-2"
+		hx-get={ "/p/" + v.Player.ID }
+		hx-target="#scores"
+		hx-swap="outerHTML"
+		hx-push-url="true"
+		hx-trigger="input changed delay:300ms from:#score-search, change"
+	>
+		<div class="relative w-full sm:w-72">
+			<span class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground">
+				@icon.Search(icon.Props{Size: 16})
+			</span>
+			@input.Input(input.Props{ID: "score-search", Name: "q", Type: "search", Value: v.Filter.Search, Placeholder: "Search song, artist or mapper", Class: "pl-8"})
+		</div>
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "state", Attributes: templ.Attributes{"aria-label": "Replay filter"}}) {
+			@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: v.Filter.State == ""}) {
+				All scores
+			}
+			@nativeselect.Option(nativeselect.OptionProps{Value: service.FilterWithReplay, Selected: v.Filter.State == service.FilterWithReplay}) {
+				With replay
+			}
+			@nativeselect.Option(nativeselect.OptionProps{Value: service.FilterArchived, Selected: v.Filter.State == service.FilterArchived}) {
+				Archived
+			}
+		}
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "ranked", Attributes: templ.Attributes{"aria-label": "Map filter"}}) {
+			@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: !v.Filter.RankedOnly}) {
+				All maps
+			}
+			@nativeselect.Option(nativeselect.OptionProps{Value: "1", Selected: v.Filter.RankedOnly}) {
+				Ranked only
+			}
+		}
+		<noscript>
+			@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline}) {
+				Apply
+			}
+		</noscript>
+	</form>
+}
+
+templ ScoreTable(v PlayerView) {
+	<div id="scores">
+		if len(v.Scores.Items) == 0 {
+			@empty.Empty(empty.Props{Class: "border border-dashed"}) {
+				@empty.Header() {
+					@empty.Title() {
+						No scores match
+					}
+					@empty.Description() {
+						Try another search or filter.
+					}
+				}
+			}
+		} else {
+			<div class="rounded-lg border">
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								Map
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Difficulty
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Rank
+							}
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Accuracy
+							}
+							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
+								PP
+							}
+							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
+								Set
+							}
+							@table.Head() {
+								Replay
+							}
+						}
+					}
+					@table.Body() {
+						for _, s := range v.Scores.Items {
+							@scoreRow(s, v.Now)
+						}
+					}
+				}
+			</div>
+			@pagination(v)
+		}
+	</div>
+}
+
+templ scoreRow(s *model.Score, now time.Time) {
+	@table.Row() {
+		@table.Cell() {
+			<a href={ templ.SafeURL(ScoreURL(s.ID)) } class="flex items-center gap-3 underline-offset-4 hover:underline">
+				if cover := CoverURL(s); cover != "" {
+					<img src={ cover } alt="" loading="lazy" class="size-10 shrink-0 rounded-md border object-cover"/>
+				}
+				<span class="min-w-0">
+					<span class="block max-w-64 truncate font-medium">{ SongTitle(s) }</span>
+					<span class="block max-w-64 truncate text-xs text-muted-foreground">{ SongAuthor(s) } · { Mapper(s) }</span>
+				</span>
+			</a>
+		}
+		@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+			@DifficultyBadge(s)
+		}
+		@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+			#{ strconv.Itoa(s.Rank) }
+		}
+		@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+			{ Percent(s.Accuracy) }
+		}
+		@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums sm:table-cell"}) {
+			{ PP(s.PP) }
+		}
+		@table.Cell(table.CellProps{Class: "hidden text-muted-foreground lg:table-cell"}) {
+			{ TimeAgo(s.SetAt, now) }
+		}
+		@table.Cell() {
+			@ReplayBadge(s.ReplayState)
+		}
+	}
+}
+
+templ DifficultyBadge(s *model.Score) {
+	if s.Leaderboard != nil {
+		@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+			{ DifficultyName(s.Leaderboard.Difficulty) }
+		}
+	}
+}
+
+templ ReplayBadge(state string) {
+	switch state {
+		case model.ReplayArchived:
+			@badge.Badge() {
+				Archived
+			}
+		case model.ReplayPending:
+			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				Pending
+			}
+		case model.ReplayFailed:
+			@badge.Badge(badge.Props{Variant: badge.VariantDestructive}) {
+				Failed
+			}
+		case model.ReplayGone:
+			@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+				Pruned
+			}
+		default:
+			<span class="text-muted-foreground">—</span>
+	}
+}
+
+templ pagination(v PlayerView) {
+	if v.Scores.Pages > 1 {
+		<nav class="mt-4 flex items-center justify-between text-sm" aria-label="Pagination">
+			<span class="text-muted-foreground">Page { strconv.Itoa(v.Scores.Page) } of { strconv.Itoa(v.Scores.Pages) } · { fmt.Sprintf("%s scores", Number(v.Scores.Total)) }</span>
+			<div class="flex gap-2">
+				@pageButton(v, v.Scores.Page-1, "Previous", v.Scores.Page <= 1)
+				@pageButton(v, v.Scores.Page+1, "Next", v.Scores.Page >= v.Scores.Pages)
+			</div>
+		</nav>
+	}
+}
+
+templ pageButton(v PlayerView, page int, label string, disabled bool) {
+	if disabled {
+		@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Disabled: true}) {
+			{ label }
+		}
+	} else {
+		{{ u := PlayerScoresURL(v.Player.ID, v.Filter, page) }}
+		@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: u, Attributes: templ.Attributes{"hx-get": u, "hx-target": "#scores", "hx-swap": "outerHTML", "hx-push-url": "true"}}) {
+			{ label }
+		}
+	}
+}

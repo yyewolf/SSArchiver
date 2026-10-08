@@ -58,6 +58,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", h.loginForm)
 	mux.HandleFunc("POST /login", h.loginSubmit)
 	mux.HandleFunc("POST /logout", h.logout)
+	mux.HandleFunc("GET /p/{id}", h.player)
+	mux.HandleFunc("GET /s/{id}", h.score)
 }
 
 // Middleware wraps the whole mux (UI and API).
