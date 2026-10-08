@@ -80,16 +80,16 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 14 | Replay download & embed endpoints | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | f4cd83c |
 | 15 | Admin: players & settings | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | c3a309f |
 | 16 | Admin: sync status page | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 58d57d6 |
-| 17 | huma JSON API | ⬜ todo | | | |
+| 17 | huma JSON API | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 60baceb |
 | 18 | App wiring, serve/healthcheck/migrate/user commands, e2e test | ⬜ todo | | | |
 | 19 | Packaging: Dockerfile, goreleaser, CI/release workflows, README | ⬜ todo | | | |
 
 ### Session hand-off
 
-_Current task:_ Task 16 done (commit 58d57d6; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 17 Step 1 (huma JSON API)
+_Current task:_ Task 17 done (commit 60baceb; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 18 Step 1 (app wiring, CLI commands, end-to-end test)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI tasks (11-16) landed. Standing lint-driven tweaks in Deviations log; icons via `icon.Icon(name)` factory with named vars in `icon_defs.go`. Ruling: private request-bound view builders taking `*http.Request` (propagating `r.Context()`) are exempt from the ctx-first letter (Task 16 eventsView/failedView). Next: huma API (17), wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI (11-16) + huma API (17) landed; `api.Register` is NOT yet mounted into the real server mux — Task 18 wires it. huma v2.39.1 forced MVS bumps (uuid 1.6.0, pflag 1.0.10, testify 1.11.1, chi, cbor, float16) — all from huma's own go.mod graph. Standing lint-driven tweaks in Deviations log. Next: wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -118,6 +118,8 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI tas
 | 2026-10-08 | 14 | `defer f.Close()` → `defer func() { _ = f.Close() }()` in `replay.go` | errcheck (pinned linter); matches viewer/handler.go precedent | No |
 | 2026-10-08 | 15 | None — brief applied verbatim, zero deviations | — | — |
 | 2026-10-08 | 16 | None — brief applied verbatim, zero deviations | — | — |
+| 2026-10-08 | 17 | `go get huma@v2.39.1` forced MVS bumps of huma's own requirements: uuid v1.6.0, pflag v1.0.10, testify v1.11.1, chi v5.3.1, cbor v2.9.2, float16 v0.8.4, randomstring v1.2.0 (huma itself stays at v2.39.1) | huma's own go.mod graph; verified against module cache | No |
+| 2026-10-08 | 17 | Tests use `httptest.NewRequestWithContext` (noctx lint); RED output was "no non-test Go files" instead of predicted `undefined: api.Register` | repo precedent; package did not exist yet (same cause) | No |
 
 ### Verification log
 
@@ -187,6 +189,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI tas
 | 2026-10-08 | 16 | `go test ./internal/service/ ./internal/web/` (post-impl) | ok (stats math, live fragment, pause/resume persisted, retry state transition, filters, auth 303) |
 | 2026-10-08 | 16 | `go test ./... && go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | all green, 0 issues. |
 | 2026-10-08 | 16 | controller spot-checks post-review: `make gen-css`+`git status`, `make lint` | gen-css idempotent, tree clean, 0 issues. |
+| 2026-10-08 | 17 | `go test ./internal/api/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 17 | `go test ./internal/api/...` (post-impl) | ok (unauth 401s on all 7 admin ops, error mapping 404/409/422, pagination cap, replay URLs, OpenAPI json) |
+| 2026-10-08 | 17 | `go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 12 packages ok, 0 issues., build OK |
+| 2026-10-08 | 17 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 12 pkgs ok, tree clean |
 
 ---
 
@@ -11002,7 +11008,7 @@ git commit -m "feat: add sync status page with budget, queue, activity log and r
   - Admin (session cookie, security scheme `session`): `POST /api/v1/players` (`add-player`, body `{"ref": "..."}` → 201), `PATCH /api/v1/players/{id}` (`update-player`, body `{"enabled": bool}`), `DELETE /api/v1/players/{id}?delete_files=bool` (`delete-player` → 204), `POST /api/v1/players/{id}/poll` (`poll-player` → 202), `GET /api/v1/sync` (`get-sync-status`), `POST /api/v1/sync/pause` / `resume` (→ 204), `POST /api/v1/sync/retry` (body `{"player_id"?, "score_id"?}` → `{"requeued": n}`)
   - Error mapping: `ErrNotFound`→404, `ErrPlayerExists`→409, `ErrInvalidPlayerRef`→422, anything else → 500 (logged); missing session → 401.
 
-- [ ] **Step 1: Allow the docs CDN** — huma's default docs page loads its renderer from a CDN. In `internal/httpx/httpx.go` change `DocsCSP` to also allow `https://cdn.jsdelivr.net` in `script-src` and `style-src`:
+- [x] **Step 1: Allow the docs CDN** — huma's default docs page loads its renderer from a CDN. In `internal/httpx/httpx.go` change `DocsCSP` to also allow `https://cdn.jsdelivr.net` in `script-src` and `style-src`:
 
 ```go
 	DocsCSP = "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; " +
@@ -11010,7 +11016,7 @@ git commit -m "feat: add sync status page with budget, queue, activity log and r
 		"img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'"
 ```
 
-- [ ] **Step 2: Write the failing tests** — `internal/api/api_test.go`
+- [x] **Step 2: Write the failing tests** — `internal/api/api_test.go`
 
 ```go
 package api_test
@@ -11226,7 +11232,7 @@ func TestOpenAPIDocument(t *testing.T) {
 
 Run: `go get github.com/danielgtaylor/huma/v2@v2.39.1 && go test ./internal/api/...` → FAIL (`undefined: api.Register`).
 
-- [ ] **Step 3: Write the DTOs** — `internal/api/dto.go`
+- [x] **Step 3: Write the DTOs** — `internal/api/dto.go`
 
 ```go
 package api
@@ -11364,7 +11370,7 @@ func scoreDTO(base string, s *model.Score) Score {
 }
 ```
 
-- [ ] **Step 4: Write registration and helpers** — `internal/api/api.go`
+- [x] **Step 4: Write registration and helpers** — `internal/api/api.go`
 
 ```go
 // Package api exposes SSArchiver over a JSON API built with huma.
@@ -11442,7 +11448,7 @@ func mapErr(err error) error {
 }
 ```
 
-- [ ] **Step 5: Players and scores operations** — `internal/api/players.go`
+- [x] **Step 5: Players and scores operations** — `internal/api/players.go`
 
 ```go
 package api
@@ -11752,12 +11758,12 @@ func (a *API) registerSync() {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `go mod tidy && go test -race ./internal/api/...`
 Expected: `ok`. If `TestAdminRequiresSession` gets 422 instead of 401 for some routes, huma validated the body before middleware: per-operation middlewares run **before** input parsing in huma v2, so a 422 means the middleware was not attached — check `a.admin(...)` wraps every admin operation.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 make lint
