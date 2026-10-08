@@ -1,6 +1,8 @@
 package testutil
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"sync"
@@ -54,6 +56,15 @@ func (c *Clock) Set(t time.Time) {
 	c.mu.Lock()
 	c.t = t
 	c.mu.Unlock()
+}
+
+// Gzip compresses s (for fake viewer bundles).
+func Gzip(s string) []byte {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte(s))
+	_ = zw.Close()
+	return buf.Bytes()
 }
 
 // Item builds a ScoreSaber score item with sensible defaults.

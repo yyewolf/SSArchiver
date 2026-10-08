@@ -1,0 +1,62 @@
+package views
+
+import (
+	"github.com/yyewolf/ssarchiver/internal/web/components/alert"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/empty"
+	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
+	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
+)
+
+// ToastOOB appends a toast via htmx out-of-band swap into #toasts.
+templ ToastOOB(t toast.Type, title, desc string) {
+	<div id="toasts" hx-swap-oob="beforeend">
+		@toast.Toast(toast.Props{Type: t, Title: title, Description: desc})
+	</div>
+}
+
+templ FormError(msg string) {
+	if msg != "" {
+		@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+			@icon.Icon("circle-alert")()
+			@alert.Description() {
+				{ msg }
+			}
+		}
+	}
+}
+
+templ NotFound(p Page, msg string) {
+	@Layout(p) {
+		@empty.Empty(empty.Props{Class: "border border-dashed"}) {
+			@empty.Header() {
+				@empty.Title() {
+					Not found
+				}
+				@empty.Description() {
+					{ msg }
+				}
+			}
+			@empty.Content() {
+				@button.Button(button.Props{Variant: button.VariantOutline, Href: "/"}) {
+					Back to players
+				}
+			}
+		}
+	}
+}
+
+templ ServerError(p Page) {
+	@Layout(p) {
+		@empty.Empty(empty.Props{Class: "border border-dashed"}) {
+			@empty.Header() {
+				@empty.Title() {
+					Something went wrong
+				}
+				@empty.Description() {
+					The error was logged. Try again in a moment.
+				}
+			}
+		}
+	}
+}

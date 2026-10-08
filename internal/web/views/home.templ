@@ -1,0 +1,74 @@
+package views
+
+import (
+	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/web/components/avatar"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/card"
+	"github.com/yyewolf/ssarchiver/internal/web/components/empty"
+)
+
+templ Home(p Page, players []service.PlayerSummary) {
+	@Layout(p) {
+		<div class="mb-8 flex flex-col gap-1">
+			<h1 class="text-2xl font-semibold tracking-tight">Players</h1>
+			<p class="text-sm text-muted-foreground">Archived ScoreSaber replays, free to download, watch and embed.</p>
+		</div>
+		if len(players) == 0 {
+			@empty.Empty(empty.Props{Class: "border border-dashed"}) {
+				@empty.Header() {
+					@empty.Title() {
+						No players yet
+					}
+					@empty.Description() {
+						Players added by the admin will show up here.
+					}
+				}
+				if p.User != nil {
+					@empty.Content() {
+						@button.Button(button.Props{Href: "/admin"}) {
+							Add a player
+						}
+					}
+				}
+			}
+		} else {
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				for _, pl := range players {
+					@playerCard(pl)
+				}
+			</div>
+		}
+	}
+}
+
+templ playerCard(pl service.PlayerSummary) {
+	<a href={ templ.SafeURL("/p/" + pl.ID) } class="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
+		@card.Card(card.Props{Class: "transition-colors group-hover:bg-muted/50"}) {
+			@card.Header() {
+				<div class="flex items-center gap-3">
+					@avatar.Avatar() {
+						@avatar.Image(avatar.ImageProps{Src: pl.AvatarURL, Alt: pl.Name})
+						@avatar.Fallback() {
+							{ Initials(pl.Name) }
+						}
+					}
+					<div class="min-w-0">
+						@card.Title(card.TitleProps{Class: "truncate"}) {
+							{ pl.Name }
+						}
+						@card.Description() {
+							{ pl.Country }
+						}
+					</div>
+				</div>
+			}
+			@card.Content() {
+				<div class="flex items-baseline justify-between text-sm">
+					<span class="text-muted-foreground">Archived replays</span>
+					<span class="font-medium tabular-nums">{ Number(pl.Counts.Archived) }</span>
+				</div>
+			}
+		}
+	</a>
+}

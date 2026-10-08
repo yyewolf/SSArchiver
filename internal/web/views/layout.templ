@@ -1,0 +1,112 @@
+package views
+
+import (
+	"strings"
+
+	"github.com/yyewolf/ssarchiver/internal/viewer"
+	"github.com/yyewolf/ssarchiver/internal/web/components"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
+	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
+	"github.com/yyewolf/ssarchiver/internal/web/static"
+)
+
+templ Layout(p Page) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="htmx-config" content={ htmxConfig }/>
+			<title>{ p.FullTitle() }</title>
+			if p.OG != nil {
+				<meta property="og:type" content="website"/>
+				<meta property="og:site_name" content={ p.Instance }/>
+				<meta property="og:title" content={ p.OG.Title }/>
+				<meta property="og:description" content={ p.OG.Description }/>
+				<meta property="og:url" content={ p.OG.URL }/>
+				if p.OG.Image != "" {
+					<meta property="og:image" content={ p.OG.Image }/>
+				}
+				<meta name="twitter:card" content="summary"/>
+			}
+			<link rel="stylesheet" href={ static.URL("css/app.css") }/>
+			<script src={ static.URL("js/theme.js") }></script>
+			<script defer src={ static.URL("js/htmx.min.js") }></script>
+			<script defer src={ static.URL("js/app.js") }></script>
+			@components.Scripts()
+		</head>
+		<body class="min-h-screen bg-background font-sans text-foreground antialiased">
+			<div class="flex min-h-screen flex-col">
+				@siteHeader(p)
+				<main class="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+					{ children... }
+				</main>
+				@siteFooter(p)
+			</div>
+			@toast.Toaster()
+			<div id="toasts" class="hidden"></div>
+		</body>
+	</html>
+}
+
+func isActive(path, href string) bool {
+	if href == "/" {
+		return path == "/" || strings.HasPrefix(path, "/p/") || strings.HasPrefix(path, "/s/")
+	}
+	return path == href
+}
+
+templ navLink(p Page, href, label string) {
+	<a
+		href={ templ.SafeURL(href) }
+		class={ "transition-colors hover:text-foreground", templ.KV("font-medium text-foreground", isActive(p.Path, href)) }
+	>{ label }</a>
+}
+
+templ siteHeader(p Page) {
+	<header class="border-b">
+		<div class="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
+			<a href="/" class="font-semibold tracking-tight">{ p.Instance }</a>
+			<nav class="flex items-center gap-4 text-sm text-muted-foreground">
+				@navLink(p, "/", "Players")
+				if p.User != nil {
+					@navLink(p, "/admin", "Manage")
+					@navLink(p, "/admin/sync", "Sync")
+					@navLink(p, "/admin/settings", "Settings")
+				}
+			</nav>
+			<div class="ml-auto flex items-center gap-1">
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIconSm, Attributes: templ.Attributes{"data-theme-toggle": "", "aria-label": "Toggle theme"}}) {
+					@icon.Icon("sun")(icon.Props{Class: "hidden dark:block"})
+					@icon.Icon("moon")(icon.Props{Class: "dark:hidden"})
+				}
+				if p.User != nil {
+					<form method="post" action="/logout">
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Type: button.TypeSubmit}) {
+							@icon.Icon("log-out")()
+							Log out
+						}
+					</form>
+				} else {
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/login"}) {
+						Log in
+					}
+				}
+			</div>
+		</div>
+	</header>
+}
+
+templ siteFooter(p Page) {
+	<footer class="border-t">
+		<div class="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-xs text-muted-foreground">
+			<span>SSArchiver { p.Version } · replays belong to their players · not affiliated with ScoreSaber</span>
+			<span>
+				Viewer: <a class="underline underline-offset-4 hover:text-foreground" href={ templ.SafeURL(viewer.SourceURL) }>ArcViewer</a>
+				(<a class="underline underline-offset-4 hover:text-foreground" href={ templ.SafeURL(viewer.LicenseURL) }>GPL-3.0</a>)
+				· <a class="underline underline-offset-4 hover:text-foreground" href="/api/docs">API</a>
+			</span>
+		</div>
+	</footer>
+}

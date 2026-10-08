@@ -1,0 +1,21 @@
+{
+  "$schema": "https://shadcn-templ.com/schema/components.json",
+  "style": "base-nova",
+  "tailwind": {
+    "css": "internal/web/assets/css/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "scripts": {
+    "dir": "internal/web/static/js",
+    "path": "/static/js"
+  },
+  "rtl": false,
+  "iconLibrary": "lucide",
+  "menuColor": "default",
+  "menuAccent": "subtle",
+  "aliases": {
+    "components": "github.com/yyewolf/ssarchiver/internal/web/components",
+    "utils": "github.com/yyewolf/ssarchiver/internal/web/utils"
+  }
+}
