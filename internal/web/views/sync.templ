@@ -93,6 +93,10 @@ func EventsURL(f service.EventFilter, page int) string {
 	return fmt.Sprintf("/admin/sync/events?level=%s&kind=%s&player=%s&page=%d", f.Level, f.Kind, f.PlayerID, page)
 }
 
+func FailedURL(page int) string {
+	return fmt.Sprintf("/admin/sync/failed?page=%d", page)
+}
+
 templ SyncPage(p Page, v SyncView, ev EventsView, fv FailedView) {
 	@Layout(p) {
 		<div class="mb-8 flex flex-col gap-1">
@@ -505,6 +509,23 @@ templ FailedTable(fv FailedView) {
 					}
 				}
 			</div>
+			if fv.Pages > 1 {
+				<div class="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+					<span>Page { strconv.Itoa(fv.Page) } of { strconv.Itoa(fv.Pages) }</span>
+					<div class="flex gap-2">
+						if fv.Page > 1 {
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"hx-get": FailedURL(fv.Page-1), "hx-target": "#failed-replays", "hx-swap": "outerHTML"}}) {
+								Newer
+							}
+						}
+						if fv.Page < fv.Pages {
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"hx-get": FailedURL(fv.Page+1), "hx-target": "#failed-replays", "hx-swap": "outerHTML"}}) {
+								Older
+							}
+						}
+					</div>
+				</div>
+			}
 		}
 	</div>
 }

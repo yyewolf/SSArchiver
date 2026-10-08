@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/archiver"
 	"github.com/yyewolf/ssarchiver/internal/model"
@@ -62,6 +63,37 @@ func TestSyncEventsFilter(t *testing.T) {
 	body := e.do(http.MethodGet, "/admin/sync/events?level=error", nil, withCookie(c), htmx("sync-events")).Body.String()
 	if !strings.Contains(body, "boom happened") || strings.Contains(body, "all fine") {
 		t.Fatalf("level filter not applied:\n%s", body)
+	}
+}
+
+func TestSyncFailedPager(t *testing.T) {
+	e := newEnv(t)
+	c := e.login()
+	ctx := context.Background()
+	if _, err := e.svc.AddPlayer(ctx, "1001"); err != nil {
+		t.Fatal(err)
+	}
+	const total = 52
+	items := make([]scoresaber.ScoreItem, 0, total)
+	for i := range total {
+		items = append(items, testutil.Item("1001", int64(i+1), 900+int64(i), testutil.T0.Add(time.Duration(i)*time.Minute), true))
+	}
+	if _, err := e.svc.UpsertScores(ctx, "1001", items); err != nil {
+		t.Fatal(err)
+	}
+	for range service.MaxReplayAttempts {
+		for _, it := range items {
+			if _, _, err := e.svc.MarkReplayAttemptFailed(ctx, it.Score.ID, errors.New("502 bad gateway")); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	page1 := e.do(http.MethodGet, "/admin/sync/failed?page=1", nil, withCookie(c), htmx("failed-replays")).Body.String()
+	contains(t, page1, "Page 1 of 2", `hx-get="/admin/sync/failed?page=2"`, "#52")
+	page2 := e.do(http.MethodGet, "/admin/sync/failed?page=2", nil, withCookie(c), htmx("failed-replays")).Body.String()
+	contains(t, page2, "Page 2 of 2", "#2", "#1")
+	if strings.Contains(page2, "#52") {
+		t.Fatalf("page 2 repeats page 1 rows:\n%s", page2)
 	}
 }
 
