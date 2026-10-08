@@ -82,14 +82,14 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 16 | Admin: sync status page | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 58d57d6 |
 | 17 | huma JSON API | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 60baceb |
 | 18 | App wiring, serve/healthcheck/migrate/user commands, e2e test | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 32d49eb (+fix f5cc2f9) |
-| 19 | Packaging: Dockerfile, goreleaser, CI/release workflows, README | ⬜ todo | | | |
+| 19 | Packaging: Dockerfile, goreleaser, CI/release workflows, README | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 54c289b |
 
 ### Session hand-off
 
-_Current task:_ Task 18 done (commit 32d49eb + idle-state fix f5cc2f9, reviewed and re-reviewed clean) — all 19 tasks now complete except Task 19
-_Next step:_ Task 19 Step 1 (packaging — Dockerfile, goreleaser, CI/release workflows, README)
+_Current task:_ Task 19 done (commit 54c289b) — ALL 19 PLAN TASKS COMPLETE. Final whole-branch review pending.
+_Next step:_ Final whole-branch review, then finishing-a-development-branch (owner decision on push/PR — nothing pushed or tagged in this session).
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Everything is wired: `internal/app` glues db/service/archiver/viewer/web/api; `cmd/ssarchiver` has serve/healthcheck/migrate/user commands; full-stack e2e test passes. Pre-existing bug found during QA and fixed+re-reviewed: `Worker.idle()` stale Paused badge after resume (f5cc2f9). Browser-only QA items remain for the human: ArcViewer playback, cross-origin embed, light/dark + 375px, 3s refresh flicker. Next: packaging (19), then final whole-branch review.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Packaging verified locally: goreleaser check+snapshot (6 archives, SBOMs, cosign bundles), actionlint clean, container rootless/read-only/healthcheck/viewer-200 (38.9 MB compressed). Pre-push checklist for the OWNER only: (1) verify workflow action SHA↔version pins online, (2) browser QA of viewer playback/embed/themes (server-side flows verified headlessly), (3) push v0.1.0-rc.1 tag + verify attestation/cosign — only with owner go-ahead.
 
 ### Deviations log
 
@@ -122,6 +122,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Everything is 
 | 2026-10-08 | 17 | Tests use `httptest.NewRequestWithContext` (noctx lint); RED output was "no non-test Go files" instead of predicted `undefined: api.Register` | repo precedent; package did not exist yet (same cause) | No |
 | 2026-10-08 | 18 | e2e add-player failure path reads the response body (better diagnostics than brief's latent nil-deref); app_test log suppression mirrors serve's logging config | test robustness, behavior-preserving | No |
 | 2026-10-08 | 18 | Fixed pre-existing bug found during QA: `Worker.idle()` kept a stale `StatePaused` snapshot after resume, so the sync badge stayed "Paused" (commit f5cc2f9, `TestResumeTransitionsToIdle` RED→GREEN, re-reviewed clean) | worker code from Tasks 8/9; badge renders Status().State | Yes — worker.go now derives paused state from current settings |
+| 2026-10-08 | 19 | `THIRD_PARTY_NOTICES.md` created before the goreleaser snapshot run (plan ordered it after) | goreleaser errors on a missing literal file in `archives.files`; all files land in one commit so order is immaterial | No |
 
 ### Verification log
 
@@ -201,6 +202,12 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Everything is 
 | 2026-10-08 | 18 | `go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 13 packages ok, 0 issues., build OK |
 | 2026-10-08 | 18 | fix commit f5cc2f9: `go test -race ./internal/archiver/... ./internal/web/...`, full suite, `make lint` | TestResumeTransitionsToIdle RED→GREEN, all ok, 0 issues. |
 | 2026-10-08 | 18 | controller spot-checks post-review+fix: `make lint`, `go test ./...`, `git status` | 0 issues., 13 pkgs ok, tree clean |
+| 2026-10-08 | 19 | `goreleaser check` | pass |
+| 2026-10-08 | 19 | `goreleaser snapshot --clean --skip=validate` (local, nothing published) | 6 archives + checksums + SBOMs + cosign bundles, correct contents |
+| 2026-10-08 | 19 | actionlint on both workflows | clean |
+| 2026-10-08 | 19 | container build + run: user 65532, read-only rootfs, /data writable (setup POST 200), healthcheck passing, /viewer 200 post-setup | pass (93.2 MB `docker image ls` is containerd double-count; 38.9 MB compressed) |
+| 2026-10-08 | 19 | `go test -race ./...`, `make lint`, `make generate && git diff --exit-code` | 13 ok, 0 issues., clean |
+| 2026-10-08 | 19 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` + action SHA pins verified via GitHub API | 0 issues., 13 pkgs ok, tree clean, pins match |
 
 ---
 
@@ -12428,7 +12435,7 @@ git commit -m "feat: wire app, serve/healthcheck/migrate/user commands and e2e t
 - Consumes: `make generate`, `make build`, `go generate ./internal/viewer`, `ssarchiver healthcheck`, ldflags vars in `internal/buildinfo`.
 - Produces: tagged releases (`v*`) publishing archives + checksums + SBOMs + cosign bundles + SLSA provenance, and `ghcr.io/yyewolf/ssarchiver:{version,latest}` multi-arch signed + attested images.
 
-- [ ] **Step 1: Write the image** — `Dockerfile`
+- [x] **Step 1: Write the image** — `Dockerfile`
 
 ```dockerfile
 # syntax=docker/dockerfile:1
@@ -12465,7 +12472,7 @@ image: viewer
 
 Add `/.docker-ctx/` to `.gitignore`.
 
-- [ ] **Step 2: Verify the image is minimal, rootless and read-only friendly**
+- [x] **Step 2: Verify the image is minimal, rootless and read-only friendly**
 
 ```bash
 make image
@@ -12485,7 +12492,7 @@ If `podman` is installed, also run: `podman run --rm -d --name ssa-p --read-only
 
 Expected: all commands succeed. A permission error writing `/data/ssarchiver.db` means `COPY --chown` did not apply to `/data`; fix the Dockerfile before continuing.
 
-- [ ] **Step 3: goreleaser config** — `.goreleaser.yaml`
+- [x] **Step 3: goreleaser config** — `.goreleaser.yaml`
 
 ```yaml
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
@@ -12589,7 +12596,7 @@ tar -tzf dist/ssarchiver_*_linux_amd64.tar.gz
 
 Expected: `check` passes; six archives + checksums; archive contains the binary, LICENSE, README.md, THIRD_PARTY_NOTICES.md; `version` prints a snapshot version. (The docker/sign/sbom steps run only in CI.) Add `/dist/` is already ignored from Task 1.
 
-- [ ] **Step 4: CI workflow** — `.github/workflows/ci.yml`
+- [x] **Step 4: CI workflow** — `.github/workflows/ci.yml`
 
 ```yaml
 name: CI
@@ -12631,7 +12638,7 @@ jobs:
           version: v2.14.0
 ```
 
-- [ ] **Step 5: Release workflow** — `.github/workflows/release.yml`
+- [x] **Step 5: Release workflow** — `.github/workflows/release.yml`
 
 ```yaml
 name: Release
@@ -12710,7 +12717,7 @@ updates:
 
 Validate syntax locally if `actionlint` is available: `go run github.com/rhysd/actionlint/cmd/actionlint@latest`. Expected: no findings.
 
-- [ ] **Step 6: Docs** — `THIRD_PARTY_NOTICES.md`
+- [x] **Step 6: Docs** — `THIRD_PARTY_NOTICES.md`
 
 ```markdown
 # Third-party notices
@@ -12840,7 +12847,7 @@ make dev        # templ watch + live reload proxy
 BSD 3-Clause. Bundled ArcViewer is GPL-3.0; see `THIRD_PARTY_NOTICES.md`.
 ````
 
-- [ ] **Step 7: Final checks and commit**
+- [x] **Step 7: Final checks and commit**
 
 ```bash
 make generate && git diff --exit-code   # generated code committed
@@ -12857,14 +12864,14 @@ git commit -m "ci: add container image, goreleaser, CI and signed SLSA release w
 
 Run after Task 19, record each result in the **Verification log**:
 
-- [ ] `make generate && git diff --exit-code` — clean
-- [ ] `make lint` — `0 issues.`
-- [ ] `go test -race ./...` — all `ok`
-- [ ] `make build && ls -lh bin/ssarchiver` — static binary, roughly 45–55 MB with the viewer
-- [ ] Task 18 Step 6 manual QA checklist — all 8 items pass
-- [ ] Task 19 Step 2 container checks — size, user, read-only run, healthcheck, viewer
-- [ ] `goreleaser check` and snapshot release — pass
-- [ ] Push a `v0.1.0-rc.1` tag on a fork or after review → release workflow green; `gh attestation verify` and `cosign verify` succeed on the published image (do this only with the repository owner's go-ahead)
+- [x] `make generate && git diff --exit-code` — clean
+- [x] `make lint` — `0 issues.`
+- [x] `go test -race ./...` — all `ok`
+- [x] `make build && ls -lh bin/ssarchiver` — static binary, roughly 45–55 MB with the viewer
+- [x] (server-side portion headlessly; browser-only items remain for the human) Task 18 Step 6 manual QA checklist — all 8 items pass
+- [x] Task 19 Step 2 container checks — size, user, read-only run, healthcheck, viewer
+- [x] `goreleaser check` and snapshot release — pass
+- [ ] NOT DONE — requires repository owner go-ahead (push/tag/publish is out of bounds for this session) Push a `v0.1.0-rc.1` tag on a fork or after review → release workflow green; `gh attestation verify` and `cosign verify` succeed on the published image (do this only with the repository owner's go-ahead)
 
 ## Spec coverage map
 
