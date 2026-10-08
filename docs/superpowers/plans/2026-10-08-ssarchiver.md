@@ -70,7 +70,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 4 | ScoreSaber client | ✅ done | kilo (euria-code) | 2026-10-08 | ca78f43 |
 | 5 | Replay blob storage | ✅ done | kilo (euria-code) | 2026-10-08 | 1dac253 |
 | 6 | Service: players, scores, replay queue, events log | ✅ done | kilo (euria-code) | 2026-10-08 | 1a38195 |
-| 7 | Service: auth, sessions, settings, events listing | ⬜ todo | | | |
+| 7 | Service: auth, sessions, settings, events listing | ✅ done | kilo (euria-code) | 2026-10-08 | f1880fc |
 | 8 | Archiver: poll, backfill, loop | ⬜ todo | | | |
 | 9 | Archiver: replay download, reconciliation, status | ⬜ todo | | | |
 | 10 | Embedded ArcViewer | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 6 done (commit 1a38195)
-_Next step:_ Task 7 Step 1 (cheap argon2id params in testutil)
+_Current task:_ Task 7 done (commit f1880fc)
+_Next step:_ Task 8 Step 1 (archiver fake client)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Service layer passed tests as written — no API changes needed; Task 7+ can rely on the documented interfaces.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). All service-layer tasks (6-7) passed as written. Next big milestone: archiver worker (Tasks 8-9).
 
 ### Deviations log
 
@@ -102,6 +102,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 5 | `Store.Put` writes `.tmp` with `0o600` instead of `0o640` | gosec G302 (pinned linter) rejects group-readable files; replays need no group access | No |
 | 2026-10-08 | 5 | `Store.Scan` removes `.tmp` via `os.Root` scoped to the store root; added `_ =` discards on `Close` | gosec G122 (TOCTOU) + errcheck under pinned linter; behaviour unchanged | No |
 | 2026-10-08 | 6 | None — plan code compiled and passed as written (gen `GteCol`/`LtCol` and `Update(col, nil)` worked; `Preload(q.Score.Leaderboard)` relation present) | — | — |
+| 2026-10-08 | 7 | None — plan code compiled and passed as written (incl. concurrent setup race via `_txlock=immediate`) | — | — |
 
 ### Verification log
 
@@ -129,6 +130,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 6 | `go test ./internal/service/...` (pre-impl) | FAIL: no non-test Go files (expected) |
 | 2026-10-08 | 6 | `go mod tidy && go test -race ./internal/service/...` | ok (all 4 test files, incl. archive-state preservation + ParsePlayerRef) |
 | 2026-10-08 | 6 | `go test ./... && make lint` | all ok, 0 issues. |
+| 2026-10-08 | 7 | `go test ./internal/service/...` (pre-impl) | FAIL: pruneEvents undefined (expected) |
+| 2026-10-08 | 7 | `go mod tidy && go test -race ./internal/service/...` | ok (auth incl. concurrent setup, settings, events) |
+| 2026-10-08 | 7 | `go test ./... && make lint` | all ok, 0 issues. |
 
 ---
 
@@ -3865,7 +3869,7 @@ git commit -m "feat: add service layer for players, scores and replay queue"
   - `type Settings struct{ InstanceTitle string; PollInterval time.Duration; WorkerPaused bool }`, `service.DefaultSettings`, `Settings(ctx) (Settings, error)`, `UpdateSettings(ctx, Settings) error`, `SetWorkerPaused(ctx, bool) error`, `service.PollIntervals = []time.Duration{5m, 10m, 15m, 30m, 1h}`
   - `type EventFilter struct{ Level, Kind, PlayerID string; Page, PerPage int }`, `ListEvents(ctx, EventFilter) ([]*model.SyncEvent, int64, error)`, `PruneEvents(ctx) (int64, error)` (7 days / 10 000 rows); `service.EventRetention = 7 * 24 * time.Hour`, `service.MaxEvents = 10000`
 
-- [ ] **Step 1: Make test hashing cheap** — in `internal/testutil/service.go`, inside `NewService` right after `svc := service.New(...)`, add:
+- [x] **Step 1: Make test hashing cheap** — in `internal/testutil/service.go`, inside `NewService` right after `svc := service.New(...)`, add:
 
 ```go
 	service.PasswordParams = &argon2id.Params{Memory: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
@@ -3873,7 +3877,7 @@ git commit -m "feat: add service layer for players, scores and replay queue"
 
 and add the import `"github.com/alexedwards/argon2id"`. Then `go get github.com/alexedwards/argon2id@v1.0.0`.
 
-- [ ] **Step 2: Write the failing auth tests** — `internal/service/auth_test.go`
+- [x] **Step 2: Write the failing auth tests** — `internal/service/auth_test.go`
 
 ```go
 package service_test
@@ -4019,7 +4023,7 @@ func TestChangeAndResetPassword(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write the failing settings/events tests** — `internal/service/settings_test.go`
+- [x] **Step 3: Write the failing settings/events tests** — `internal/service/settings_test.go`
 
 ```go
 package service_test
@@ -4135,12 +4139,12 @@ package service
 var PruneEventsWith = (*Service).pruneEvents
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `go test ./internal/service/...`
 Expected: FAIL — `undefined: service.ErrWeakPassword`, `svc.Setup`, …
 
-- [ ] **Step 5: Implement auth** — `internal/service/auth.go`
+- [x] **Step 5: Implement auth** — `internal/service/auth.go`
 
 ```go
 package service
@@ -4348,7 +4352,7 @@ func (s *Service) ResetPassword(ctx context.Context, username, newPW string) err
 }
 ```
 
-- [ ] **Step 6: Implement settings** — `internal/service/settings.go`
+- [x] **Step 6: Implement settings** — `internal/service/settings.go`
 
 ```go
 package service
@@ -4445,7 +4449,7 @@ func (s *Service) SetWorkerPaused(ctx context.Context, paused bool) error {
 }
 ```
 
-- [ ] **Step 7: Add event listing and pruning** — append to `internal/service/events.go` (add imports `"fmt"`, `"time"`):
+- [x] **Step 7: Add event listing and pruning** — append to `internal/service/events.go` (add imports `"fmt"`, `"time"`):
 
 ```go
 const (
@@ -4509,12 +4513,12 @@ func (s *Service) pruneEvents(ctx context.Context, maxAge time.Duration, maxCoun
 }
 ```
 
-- [ ] **Step 8: Run tests**
+- [x] **Step 8: Run tests**
 
 Run: `go mod tidy && go test -race ./internal/service/...`
 Expected: `ok`. If `TestSetupConcurrentOnlyOneWins` reports `database is locked`, confirm `_txlock=immediate` and `busy_timeout` are in the DSN (Task 2).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 make lint
