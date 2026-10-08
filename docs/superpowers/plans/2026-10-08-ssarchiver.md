@@ -79,17 +79,17 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 13 | Public player & score pages | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | b1fdf42 |
 | 14 | Replay download & embed endpoints | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | f4cd83c |
 | 15 | Admin: players & settings | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | c3a309f |
-| 16 | Admin: sync status page | ⬜ todo | | | |
+| 16 | Admin: sync status page | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 58d57d6 |
 | 17 | huma JSON API | ⬜ todo | | | |
 | 18 | App wiring, serve/healthcheck/migrate/user commands, e2e test | ⬜ todo | | | |
 | 19 | Packaging: Dockerfile, goreleaser, CI/release workflows, README | ⬜ todo | | | |
 
 ### Session hand-off
 
-_Current task:_ Task 15 done (commit c3a309f; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 16 Step 1 (admin sync status page)
+_Current task:_ Task 16 done (commit 58d57d6; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 17 Step 1 (huma JSON API)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages landed (11-15): foundation, auth, public pages, replay endpoints, admin players+settings. Standing lint-driven tweaks in Deviations log; icons via `icon.Icon(name)` factory with named vars in `icon_defs.go`. Next: sync status (16), API (17), wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. All web UI tasks (11-16) landed. Standing lint-driven tweaks in Deviations log; icons via `icon.Icon(name)` factory with named vars in `icon_defs.go`. Ruling: private request-bound view builders taking `*http.Request` (propagating `r.Context()`) are exempt from the ctx-first letter (Task 16 eventsView/failedView). Next: huma API (17), wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -117,6 +117,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages land
 | 2026-10-08 | 13 | None — brief followed verbatim; added `icon_defs.go` named vars wrapping the `icon.Icon(name)` factory so the brief's icon snippets compile as written | resolves Task 11's icon-factory ruling inside Task 13's snippets | No |
 | 2026-10-08 | 14 | `defer f.Close()` → `defer func() { _ = f.Close() }()` in `replay.go` | errcheck (pinned linter); matches viewer/handler.go precedent | No |
 | 2026-10-08 | 15 | None — brief applied verbatim, zero deviations | — | — |
+| 2026-10-08 | 16 | None — brief applied verbatim, zero deviations | — | — |
 
 ### Verification log
 
@@ -182,6 +183,10 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web pages land
 | 2026-10-08 | 15 | `go test ./internal/web/` (post-impl) | ok (admin auth 303/401+HX-Redirect, add/remove player incl. replay-file deletion, settings+password flows, duplicate add, invalid refs) |
 | 2026-10-08 | 15 | `go test ./... && make test && make lint && CGO_ENABLED=0 go build -trimpath ./...` | all green, 0 issues. |
 | 2026-10-08 | 15 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 11 pkgs ok, tree clean |
+| 2026-10-08 | 16 | `go test ./internal/service/ ./internal/web/` (pre-impl) | FAIL (expected) |
+| 2026-10-08 | 16 | `go test ./internal/service/ ./internal/web/` (post-impl) | ok (stats math, live fragment, pause/resume persisted, retry state transition, filters, auth 303) |
+| 2026-10-08 | 16 | `go test ./... && go test -race ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | all green, 0 issues. |
+| 2026-10-08 | 16 | controller spot-checks post-review: `make gen-css`+`git status`, `make lint` | gen-css idempotent, tree clean, 0 issues. |
 
 ---
 
@@ -10116,7 +10121,7 @@ git commit -m "feat: add admin pages for players and settings"
   - `views.SyncView{Status archiver.Status; Paused bool; Queues []QueueRow; PendingTotal, FailedTotal int64; RatePerHour float64; ETA time.Duration; Now time.Time}`, `views.QueueRow{Player service.PlayerSummary; NextPoll time.Time; ETA time.Duration}`, `views.EventsView{Events []*model.SyncEvent; Total int64; Filter service.EventFilter; Players []service.PlayerSummary; Now time.Time}`, `views.FailedView{Items []*model.Score; Total int64; Page, Pages int; Now time.Time}`
   - templ `SyncPage`, `SyncLive` (root `#sync-live`, polls itself every 3 s), `SyncLiveToast`, `EventsTable` (root `#sync-events`), `FailedTable` (root `#failed-replays`), `FailedRetried`
 
-- [ ] **Step 1: Write the failing stats test** — `internal/service/stats_test.go`
+- [x] **Step 1: Write the failing stats test** — `internal/service/stats_test.go`
 
 ```go
 package service_test
@@ -10174,7 +10179,7 @@ func ETA(pending int64, perHour float64) time.Duration {
 
 Run: `go test ./internal/service/ -run ReplayRate` → `ok`.
 
-- [ ] **Step 2: Write the failing web tests** — `internal/web/admin_sync_test.go`
+- [x] **Step 2: Write the failing web tests** — `internal/web/admin_sync_test.go`
 
 ```go
 package web_test
@@ -10274,7 +10279,7 @@ func TestSyncRequiresLogin(t *testing.T) {
 
 Run: `go test ./internal/web/ -run Sync` → FAIL.
 
-- [ ] **Step 3: Write the sync views** — `internal/web/views/sync.templ`
+- [x] **Step 3: Write the sync views** — `internal/web/views/sync.templ`
 
 ```templ
 package views
@@ -10794,7 +10799,7 @@ templ FailedRetried(fv FailedView, n int64) {
 }
 ```
 
-- [ ] **Step 4: Implement handlers** — `internal/web/admin_sync.go`
+- [x] **Step 4: Implement handlers** — `internal/web/admin_sync.go`
 
 ```go
 package web
@@ -10966,7 +10971,7 @@ Register in `Routes`:
 	mux.HandleFunc("POST /admin/sync/retry", h.requireAdmin(h.syncRetry))
 ```
 
-- [ ] **Step 5: Generate and test**
+- [x] **Step 5: Generate and test**
 
 ```bash
 go tool templ generate && make gen-css && go test ./internal/web/... ./internal/service/...
@@ -10974,7 +10979,7 @@ go tool templ generate && make gen-css && go test ./internal/web/... ./internal/
 
 Expected: `ok`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 make generate && make lint
