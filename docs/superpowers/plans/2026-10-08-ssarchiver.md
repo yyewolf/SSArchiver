@@ -68,7 +68,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 2 | Models, SQLite, gorm gen | ✅ done | kilo (euria-code) | 2026-10-08 | 6a44ea8 |
 | 3 | ScoreSaber rate limiter | ✅ done | kilo (euria-code) | 2026-10-08 | 3f13084 |
 | 4 | ScoreSaber client | ✅ done | kilo (euria-code) | 2026-10-08 | ca78f43 |
-| 5 | Replay blob storage | ⬜ todo | | | |
+| 5 | Replay blob storage | ✅ done | kilo (euria-code) | 2026-10-08 | 1dac253 |
 | 6 | Service: players, scores, replay queue, events log | ⬜ todo | | | |
 | 7 | Service: auth, sessions, settings, events listing | ⬜ todo | | | |
 | 8 | Archiver: poll, backfill, loop | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 4 done (commits ca78f43 + 7513419)
-_Next step:_ Task 5 Step 1 (storage tests)
+_Current task:_ Task 5 done (commit 1dac253)
+_Next step:_ Task 6 Step 1 (service test helpers)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Live smoke test (`go test -tags live -run Live ./internal/scoresaber`) uses the owner's profile 76561198038925092 and passes.
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Live smoke test uses owner profile 76561198038925092. Storage deviates slightly from plan code for gosec G302/G122 (0o600 tmp files, os.Root scan).
 
 ### Deviations log
 
@@ -99,6 +99,8 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 1 | `internal/cli/version.go` discards the `fmt.Fprintf` return (`_, _ =`) | golangci-lint v2.14.0 errcheck rejects the unchecked call | No |
 | 2026-10-08 | 2 | Bumped transitive deps `gorm.io/plugin/dbresolver` 1.5.3→1.6.2 and `golang.org/x/tools` →v0.51.0 (x/mod, x/sys follow) | gen v0.3.29's pinned transitives don't compile with gorm v1.31.2 (`undefined: gorm.Stmt`) / Go 1.27 (x/tools tokeninternal); gen/gorm/sqlite stay at pinned versions | No |
 | 2026-10-08 | 4 | Live smoke test uses player id `76561198038925092` instead of `1922350521131465` | User asked their own profile be used for tests | No |
+| 2026-10-08 | 5 | `Store.Put` writes `.tmp` with `0o600` instead of `0o640` | gosec G302 (pinned linter) rejects group-readable files; replays need no group access | No |
+| 2026-10-08 | 5 | `Store.Scan` removes `.tmp` via `os.Root` scoped to the store root; added `_ =` discards on `Close` | gosec G122 (TOCTOU) + errcheck under pinned linter; behaviour unchanged | No |
 
 ### Verification log
 
@@ -120,6 +122,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen trans
 | 2026-10-08 | 4 | `go test -race ./internal/scoresaber/... && go vet -tags live ./internal/scoresaber/...` | ok, vet clean |
 | 2026-10-08 | 4 | `go test -tags live -run Live ./internal/scoresaber -v` | PASS (real API, player 76561198038925092) |
 | 2026-10-08 | 4 | `make lint` (after errcheck/gofumpt fixes, commit 7513419) | 0 issues. |
+| 2026-10-08 | 5 | `go test ./internal/storage/...` (pre-impl) | FAIL: no non-test Go files (expected) |
+| 2026-10-08 | 5 | `go test -race ./internal/storage/...` | ok |
+| 2026-10-08 | 5 | `go test ./... && make lint` (after gosec/errcheck fixes) | all ok, 0 issues. |
 
 ---
 
@@ -1919,7 +1924,7 @@ git commit -m "feat: add ScoreSaber v2 API client"
   - `storage.ValidPlayerID(id string) bool` (`^[0-9]{1,32}$`)
   - Errors: `storage.ErrWrite` (local filesystem failure — the worker pauses on it), `storage.ErrEmpty` (source produced 0 bytes), `storage.ErrInvalidID`. Errors from reading the source are returned wrapped **without** `ErrWrite`.
 
-- [ ] **Step 1: Write the failing tests** — `internal/storage/storage_test.go`
+- [x] **Step 1: Write the failing tests** — `internal/storage/storage_test.go`
 
 ```go
 package storage_test
@@ -2064,12 +2069,12 @@ func TestHashFile(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/storage/...`
 Expected: FAIL — `undefined: storage.New`.
 
-- [ ] **Step 3: Implement** — `internal/storage/storage.go`
+- [x] **Step 3: Implement** — `internal/storage/storage.go`
 
 ```go
 // Package storage stores replay files on disk as {root}/{player}/{score}.dat.
@@ -2261,12 +2266,12 @@ func HashFile(path string) (int64, string, error) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `go test -race ./internal/storage/...`
 Expected: `ok`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 make lint
