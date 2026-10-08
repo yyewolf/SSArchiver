@@ -76,7 +76,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 10 | Embedded ArcViewer | ✅ done | kilo (euria-code) | 2026-10-08 | 83b5059 |
 | 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | 5970ec8 |
 | 12 | Web auth (setup, login, logout) | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | e358394 |
-| 13 | Public player & score pages | ⬜ todo | | | |
+| 13 | Public player & score pages | ✅ done | kilo (euria-code) + SDD implementer subagent | 2026-10-08 | b1fdf42 |
 | 14 | Replay download & embed endpoints | ⬜ todo | | | |
 | 15 | Admin: players & settings | ⬜ todo | | | |
 | 16 | Admin: sync status page | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 12 done (commit e358394; executed via subagent-driven development with a clean task review)
-_Next step:_ Task 13 Step 1 (public player & score pages)
+_Current task:_ Task 13 done (commit b1fdf42; executed via subagent-driven development with a clean task review)
+_Next step:_ Task 14 Step 1 (replay download & embed endpoints)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation (Task 11) + auth pages (Task 12) landed; see Deviations log for the forced tweaks (G124 cookie Secure, `#nosec G710` on `redirect`, extra internal tests to satisfy the strict `unused` linter). Icons use the `icon.Icon(name)` factory. Next: public pages (Task 13), replay endpoints (14), admin (15-16), API (17), wiring (18), packaging (19).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation (11), auth (12) and public pages (13) landed; Task 13 added `views/urls.go` helpers + named icon vars (`icon_defs.go` wraps the `icon.Icon(name)` factory). Deviations log has the standing lint-driven tweaks. Next: replay endpoints (14), admin (15-16), API (17), wiring (18), packaging (19).
 
 ### Deviations log
 
@@ -114,6 +114,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation
 | 2026-10-08 | 12 | Cookie `Secure` set via conditional literal store instead of a field literal | gosec G124 (pinned linter); serialization-identical | No |
 | 2026-10-08 | 12 | `#nosec G710` on the pre-existing `redirect` helper | gosec taint analyzer cannot recognize `safeNext` validation; all 5 call sites verified constant/safe | No |
 | 2026-10-08 | 12 | Added `auth_internal_test.go` (`TestRequireAdmin`, `TestSafeNext`) | strict `unused` linter rejects `requireAdmin`/`safeNext` without tests (Task 11 precedent) | No |
+| 2026-10-08 | 13 | None — brief followed verbatim; added `icon_defs.go` named vars wrapping the `icon.Icon(name)` factory so the brief's icon snippets compile as written | resolves Task 11's icon-factory ruling inside Task 13's snippets | No |
 
 ### Verification log
 
@@ -166,6 +167,11 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. Web foundation
 | 2026-10-08 | 12 | `go test ./internal/web/` (post-impl) | ok (setup-once, login success/failure, logout, open-redirect rejection, cookie flags) |
 | 2026-10-08 | 12 | `make test && make lint` | -race green, 0 issues. |
 | 2026-10-08 | 12 | controller spot-checks post-review: `make gen-css` + `git status` | gen-css idempotent, tree clean |
+| 2026-10-08 | 13 | `go test ./internal/web/views/...` (pre-impl) | FAIL: undefined: PlayerScoresURL … (expected) |
+| 2026-10-08 | 13 | `go test ./internal/web/` (pre-impl, 404 predictions) | FAIL: got 404 for /p/… and /s/… (expected) |
+| 2026-10-08 | 13 | `go test ./internal/web/... ./internal/web/views/...` (post-impl) | ok (filters, htmx partial swap, pending-score link hiding, 404s, nil preloads) |
+| 2026-10-08 | 13 | `go test ./... && make lint && CGO_ENABLED=0 go build -trimpath ./...` | 11 packages ok, 0 issues., build OK |
+| 2026-10-08 | 13 | controller spot-checks post-review: `make lint`, `go test ./...`, `git status` | 0 issues., 11 pkgs ok, tree clean |
 
 ---
 
@@ -8293,7 +8299,7 @@ git commit -m "feat: add first-run setup, login and logout"
   - URL/text helpers (`views/urls.go`): `PlayerScoresURL(playerID string, f service.ScoreFilter, page int) string`, `EmbedSnippet(embedURL string) string`, `ViewerSrc(base string, id int64, autoplay, loop, hideUI bool) string`, `SongTitle(*model.Score) string`, `SongAuthor(*model.Score) string`, `Mapper(*model.Score) string`, `PlayerName(*model.Score) string`, `CoverURL(*model.Score) string`, `ScoreSummary(*model.Score) string`
   - Behaviour: an htmx request with `HX-Target: scores` to `/p/{id}` gets only `ScoreTable`.
 
-- [ ] **Step 1: Write the failing helper tests** — `internal/web/views/urls_test.go`
+- [x] **Step 1: Write the failing helper tests** — `internal/web/views/urls_test.go`
 
 ```go
 package views
@@ -8345,7 +8351,7 @@ func TestScoreText(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Implement the helpers** — `internal/web/views/urls.go`
+- [x] **Step 2: Implement the helpers** — `internal/web/views/urls.go`
 
 ```go
 package views
@@ -8456,7 +8462,7 @@ func ScoreSummary(s *model.Score) string {
 
 Run: `go test ./internal/web/views/` → `ok`.
 
-- [ ] **Step 3: Write the failing page tests** — `internal/web/public_test.go`
+- [x] **Step 3: Write the failing page tests** — `internal/web/public_test.go`
 
 ```go
 package web_test
@@ -8547,7 +8553,7 @@ func TestScorePageStates(t *testing.T) {
 
 Run: `go test ./internal/web/ -run 'Player|Score'` → FAIL (404 everywhere).
 
-- [ ] **Step 4: Write the player view** — `internal/web/views/player.templ`
+- [x] **Step 4: Write the player view** — `internal/web/views/player.templ`
 
 ```templ
 package views
@@ -8820,7 +8826,7 @@ templ pageButton(v PlayerView, page int, label string, disabled bool) {
 }
 ```
 
-- [ ] **Step 5: Write the score view** — `internal/web/views/score.templ`
+- [x] **Step 5: Write the score view** — `internal/web/views/score.templ`
 
 ```templ
 package views
@@ -8966,7 +8972,7 @@ func alertVariant(destructive bool) alert.Variant {
 }
 ```
 
-- [ ] **Step 6: Implement handlers** — `internal/web/public.go`
+- [x] **Step 6: Implement handlers** — `internal/web/public.go`
 
 ```go
 package web
@@ -9060,7 +9066,7 @@ Register in `Routes`:
 	mux.HandleFunc("GET /s/{id}", h.score)
 ```
 
-- [ ] **Step 7: Generate, test, look at it**
+- [x] **Step 7: Generate, test, look at it**
 
 ```bash
 go tool templ generate && make gen-css && go test ./internal/web/...
@@ -9068,7 +9074,7 @@ go tool templ generate && make gen-css && go test ./internal/web/...
 
 Expected: `ok`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 make generate && make lint
