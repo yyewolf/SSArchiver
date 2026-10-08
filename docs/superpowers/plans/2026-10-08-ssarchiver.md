@@ -72,7 +72,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 | 6 | Service: players, scores, replay queue, events log | ✅ done | kilo (euria-code) | 2026-10-08 | 1a38195 |
 | 7 | Service: auth, sessions, settings, events listing | ✅ done | kilo (euria-code) | 2026-10-08 | f1880fc |
 | 8 | Archiver: poll, backfill, loop | ✅ done | kilo (euria-code) | 2026-10-08 | a6eead1 |
-| 9 | Archiver: replay download, reconciliation, status | ⬜ todo | | | |
+| 9 | Archiver: replay download, reconciliation, status | ✅ done | kilo (euria-code) | 2026-10-08 | 6aca494 |
 | 10 | Embedded ArcViewer | ⬜ todo | | | |
 | 11 | Web foundation (shadcn-templ, Tailwind, layout, middleware, home) | ⬜ todo | | | |
 | 12 | Web auth (setup, login, logout) | ⬜ todo | | | |
@@ -86,10 +86,10 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 ### Session hand-off
 
-_Current task:_ Task 8 done (commit a6eead1)
-_Next step:_ Task 9 Step 1 (reconcile test)
+_Current task:_ Task 9 done (commit 6aca494)
+_Next step:_ Task 10 Step 1 (viewer manifest + placeholder)
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ go.mod is `go 1.27` per user instruction. NOTE: `Worker.lastReplayPlayer` and `fakeClient.replaysCalled()` were removed in Task 8 to satisfy the pinned `unused` linter — Task 9 must re-add them (they are referenced by Task 9's Step replay tiers and download tests).
+_Notes for next agent:_ go.mod is `go 1.27` per user instruction. gorm gen transitives bumped (see Deviations log). Backend core complete: models, scoresaber client/limiter, storage, service, archiver (poll+backfill+downloads+reconcile). Next: embedded ArcViewer, then web UI.
 
 ### Deviations log
 
@@ -104,6 +104,7 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. NOTE: `Worker.
 | 2026-10-08 | 6 | None — plan code compiled and passed as written (gen `GteCol`/`LtCol` and `Update(col, nil)` worked; `Preload(q.Score.Leaderboard)` relation present) | — | — |
 | 2026-10-08 | 7 | None — plan code compiled and passed as written (incl. concurrent setup race via `_txlock=immediate`) | — | — |
 | 2026-10-08 | 8 | `Worker.lastReplayPlayer` field and `fakeClient.replaysCalled()` removed in Task 8 (re-added by Task 9) | pinned `unused` linter rejects members only used by Task 9 | Yes — Task 9 must re-add them |
+| 2026-10-08 | 9 | Re-added `lastReplayPlayer` + `replaysCalled()` exactly as the plan originally specified; otherwise none | resolves the Task 8 deviation | Yes — deviation resolved |
 
 ### Verification log
 
@@ -137,6 +138,9 @@ _Notes for next agent:_ go.mod is `go 1.27` per user instruction. NOTE: `Worker.
 | 2026-10-08 | 8 | `go test ./internal/archiver/...` (pre-impl) | FAIL: no non-test Go files (expected) |
 | 2026-10-08 | 8 | `go test -race ./internal/archiver/...` | ok (poll/backfill/loop tests) |
 | 2026-10-08 | 8 | `go test ./... && make lint` (after removing Task-9-only members) | all ok, 0 issues. |
+| 2026-10-08 | 9 | `go test ./internal/service/... ./internal/archiver/...` (pre-impl) | FAIL: ReconcileStorage/ReconcileResult/replaysCalled undefined (expected) |
+| 2026-10-08 | 9 | `go test -race ./internal/service/... ./internal/archiver/...` | ok (reconcile + download + priority + status tests; Task 8 tests still pass) |
+| 2026-10-08 | 9 | `go test ./... && make lint` | all ok, 0 issues. |
 
 ---
 
@@ -5294,7 +5298,7 @@ Reconciliation rules: delete stray `*.tmp`; a `.dat` whose score row exists for 
 
 Download rules: success → `MarkReplayArchived` + `info`/`replay` event; `storage.ErrWrite` → `SetWorkerPaused(true)` + `error`/`worker` event, no attempt counted; ctx cancelled → return ctx error, no attempt; `ErrRateLimited` → `warn` event, no attempt; `ErrNotFound` → `MarkReplayGone` + `warn` event; anything else (incl. mid-stream source errors and empty bodies) → `MarkReplayAttemptFailed` + `warn` (or `error` when giving up).
 
-- [ ] **Step 1: Write the failing reconcile test** — `internal/service/reconcile_test.go`
+- [x] **Step 1: Write the failing reconcile test** — `internal/service/reconcile_test.go`
 
 ```go
 package service_test
@@ -5354,7 +5358,7 @@ func TestReconcileStorage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the failing download tests** — `internal/archiver/download_test.go`
+- [x] **Step 2: Write the failing download tests** — `internal/archiver/download_test.go`
 
 ```go
 package archiver_test
@@ -5544,12 +5548,12 @@ func TestStatusReportsRateLimited(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `go test ./internal/service/... ./internal/archiver/...`
 Expected: FAIL — `undefined: service.ReconcileResult`; download tests fail because `Step` never downloads.
 
-- [ ] **Step 4: Implement reconciliation** — `internal/service/reconcile.go`
+- [x] **Step 4: Implement reconciliation** — `internal/service/reconcile.go`
 
 ```go
 package service
@@ -5636,7 +5640,7 @@ func (s *Service) ReconcileStorage(ctx context.Context) (ReconcileResult, error)
 }
 ```
 
-- [ ] **Step 5: Implement downloads** — `internal/archiver/download.go`
+- [x] **Step 5: Implement downloads** — `internal/archiver/download.go`
 
 ```go
 package archiver
@@ -5725,7 +5729,7 @@ func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 }
 ```
 
-- [ ] **Step 6: Wire replay tiers and reconciliation into the worker** — in `internal/archiver/worker.go`:
+- [x] **Step 6: Wire replay tiers and reconciliation into the worker** — in `internal/archiver/worker.go`:
 
 Replace the part of `Step` after the poll block with:
 
@@ -5764,12 +5768,12 @@ and at the very top of `Run`, before the loop:
 	}
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run: `go test -race ./internal/service/... ./internal/archiver/...`
 Expected: `ok` (Task 8 tests still pass: downloads for fake replays succeed and are simply extra work drained by `drain`).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 make lint
