@@ -11,7 +11,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261005185213-c3db4df58582
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/term v0.46.0
 	gorm.io/gen v0.3.29
 	gorm.io/gorm v1.31.2
