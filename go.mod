@@ -1,6 +1,6 @@
 module github.com/yyewolf/ssarchiver
 
-go 1.27
+go 1.27.1
 
 require (
 	github.com/Oudwins/tailwind-merge-go v0.2.3
