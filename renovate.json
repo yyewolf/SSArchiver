@@ -23,7 +23,7 @@
     },
     {
       "description": "Keep the golangci-lint pin in sync across Makefile and CI",
-      "matchManagers": ["regex"],
+      "matchManagers": ["custom.regex"],
       "matchDepNames": ["golangci/golangci-lint"],
       "groupName": "golangci-lint",
       "automerge": true
