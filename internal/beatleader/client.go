@@ -138,6 +138,25 @@ func (c *Client) Scores(ctx context.Context, playerID string, page int) (ScorePa
 	return sp, err
 }
 
+// Attempts fetches one page (newest first) of a player's attempts
+// (scoresstats; sortBy must be sent, it defaults to pp). 401 while the
+// player's history is private, and for unknown players (spec §2.2).
+func (c *Client) Attempts(ctx context.Context, playerID string, page, count int) (ScorePage, error) {
+	var sp ScorePage
+	q := url.Values{
+		"sortBy": {"date"}, "order": {"desc"},
+		"page": {strconv.Itoa(page)}, "count": {strconv.Itoa(count)},
+	}
+	err := c.getJSON(ctx, "/player/"+url.PathEscape(playerID)+"/scoresstats", q, &sp)
+	return sp, err
+}
+
+// ScoreReplay reports whether u is a score replay (CDN or replays-storage)
+// rather than an attempt replay (otherreplays).
+func (c *Client) ScoreReplay(u string) bool {
+	return c.ReplayAllowed(u) && !strings.HasPrefix(u, c.prefixes.Other)
+}
+
 // Replay streams a replay from an allowlisted URL. The caller closes the body.
 func (c *Client) Replay(ctx context.Context, u string) (io.ReadCloser, error) {
 	if !c.ReplayAllowed(u) {

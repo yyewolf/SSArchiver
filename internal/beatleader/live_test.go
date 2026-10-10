@@ -5,6 +5,7 @@ package beatleader_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 
@@ -36,5 +37,14 @@ func TestLiveBeatLeader(t *testing.T) {
 	head := make([]byte, 4)
 	if _, err := io.ReadFull(rc, head); err != nil || !bytes.Equal(head, []byte{0x69, 0x3d, 0x2d, 0x44}) {
 		t.Fatalf("not a BSOR file: % x %v", head, err)
+	}
+	att, err := c.Attempts(ctx, livePlayerID, 1, 1)
+	switch {
+	case errors.Is(err, beatleader.ErrUnauthorized):
+		t.Log("the owner's attempt history is private right now: probe path verified, listing skipped")
+	case err != nil:
+		t.Fatalf("attempts: %v", err)
+	case att.Metadata.Total == 0 || len(att.Data) != 1:
+		t.Fatalf("attempts page = %+v", att.Metadata)
 	}
 }

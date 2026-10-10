@@ -197,6 +197,48 @@ func TestReplayAllowlist(t *testing.T) {
 	}
 }
 
+func TestAttempts(t *testing.T) {
+	e := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/player/private/scoresstats" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		q := r.URL.Query()
+		if r.URL.Path != "/player/42/scoresstats" || q.Get("sortBy") != "date" || q.Get("order") != "desc" ||
+			q.Get("page") != "3" || q.Get("count") != "100" {
+			t.Errorf("unexpected request %s", r.URL)
+		}
+		_, _ = w.Write(fixture(t, "attempts.json"))
+	})
+	ctx := context.Background()
+	sp, err := e.c.Attempts(ctx, "42", 3, 100)
+	if err != nil || sp.Metadata.Total != 8 || len(sp.Data) != 8 {
+		t.Fatalf("attempts = %+v %v", sp.Metadata, err)
+	}
+	a := sp.Data[0]
+	if a.EndType != 4 || a.Time != 22.91243 || a.Timeset != 0 ||
+		!a.Timepost.Time().Equal(time.Date(2026, 10, 4, 21, 27, 37, 0, time.UTC)) || !strings.Contains(a.Replay, "/otherreplays/") {
+		t.Fatalf("attempt = %+v", a)
+	}
+	if _, err := e.c.Attempts(ctx, "private", 1, 1); !errors.Is(err, beatleader.ErrUnauthorized) {
+		t.Fatalf("private history = %v", err)
+	}
+}
+
+func TestScoreReplay(t *testing.T) {
+	c := beatleader.NewClient(nil, nil)
+	for u, want := range map[string]bool{
+		"https://cdn.replays.beatleader.xyz/1-2-Expert-Standard-ABC.bsor":     true,
+		"https://api.beatleader.xyz/replays-storage/1-2-Expert-Standard.bsor": true,
+		"https://api.beatleader.xyz/otherreplays/34897106.bsor":               false,
+		"https://evil.example/cdn.replays.beatleader.xyz/1.bsor":              false,
+	} {
+		if c.ScoreReplay(u) != want {
+			t.Errorf("ScoreReplay(%s) = %v", u, !want)
+		}
+	}
+}
+
 func TestDefaultAllowlist(t *testing.T) {
 	c := beatleader.NewClient(nil, nil)
 	for u, want := range map[string]bool{

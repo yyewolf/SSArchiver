@@ -74,6 +74,7 @@ type PlayPage struct {
 	Plays      []Play
 	TotalPages int
 	Refused    int // plays whose replay URL is not on the platform's allowlist; kept without a replay
+	Skipped    int // plays the adapter dropped on purpose (another feed stores them); the page was not empty
 }
 
 // ReplayRef identifies the replay of a stored row.
@@ -86,9 +87,11 @@ type ReplayRef struct {
 // Hint tells the admin what a player must do to grant access to a feed (spec §6.3).
 type Hint struct {
 	Title    string
-	Steps    []string
+	Intro    string   // one sentence under the title
+	Steps    []string // short imperative steps for the player
 	LinkText string
 	LinkURL  string
+	Note     string // closing remark: re-checks, what is lost while waiting
 }
 
 // FeedSpec declares one feed of a platform. Its Kind is also its key in sync_feeds.

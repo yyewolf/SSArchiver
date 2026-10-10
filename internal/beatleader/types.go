@@ -55,6 +55,8 @@ type Score struct {
 	HMD           int         `json:"hmd"`
 	Timeset       UnixTime    `json:"timeset"`
 	Timepost      UnixTime    `json:"timepost"`
+	EndType       int         `json:"endType"` // attempts: unknown(0) clear(1) fail(2) restart(3) quit(4) practice(5)
+	Time          float64     `json:"time"`    // attempts: seconds into the song when the run ended
 	LeaderboardID string      `json:"leaderboardId"`
 	Replay        string      `json:"replay"` // null decodes to ""
 	Leaderboard   Leaderboard `json:"leaderboard"`

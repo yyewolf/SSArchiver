@@ -22,14 +22,32 @@ const Name = "beatleader"
 type API interface {
 	Player(ctx context.Context, id string) (Player, error)
 	Scores(ctx context.Context, playerID string, page int) (ScorePage, error)
+	Attempts(ctx context.Context, playerID string, page, count int) (ScorePage, error)
 	Replay(ctx context.Context, url string) (io.ReadCloser, error)
 	ReplayAllowed(url string) bool
+	ScoreReplay(url string) bool
 }
 
 var (
 	profileURLRe = regexp.MustCompile(`^(?:https?://)?(?:www\.)?beatleader\.(?:com|xyz)/u/([A-Za-z0-9_.-]{1,64})/?(?:[?#].*)?$`)
 	idRe         = regexp.MustCompile(`^[0-9]{1,32}$`)
 )
+
+// attemptsHint is shown while a player's attempt history is private (spec §6.3).
+var attemptsHint = &platform.Hint{
+	Title: "Attempt history is private on BeatLeader",
+	Intro: "SSArchiver can only archive attempts when the player makes their history public:",
+	Steps: []string{
+		"Sign in on beatleader.com with this account.",
+		"Open Settings → Scores.",
+		"Turn on Public history (auto-synced).",
+		"Reload the page and check the switch is still on (BeatLeader can show it on even when saving failed).",
+	},
+	LinkText: "Open BeatLeader settings",
+	LinkURL:  "https://beatleader.com/settings",
+	Note: "SSArchiver also re-checks every 24 hours. Old attempt replays are dropped by BeatLeader over time, " +
+		"so the sooner this is on, the more can be saved.",
+}
 
 // NewPlatform is BeatLeader's registry entry (spec §5.3). Nil limiters
 // (tests) mean no client-side rate limiting.
@@ -49,7 +67,10 @@ func NewPlatform(api API, apiL, cdnL *Limiter) platform.Platform {
 			return m[1], true
 		},
 		ValidID: idRe.MatchString,
-		Feeds:   []platform.FeedSpec{{Kind: model.KindScore}},
+		Feeds: []platform.FeedSpec{
+			{Kind: model.KindScore},
+			{Kind: model.KindAttempt, Optional: true, NeedsAccess: true, AccessHint: attemptsHint},
+		},
 		Adapter: adapter{api: api, apiL: apiL, cdnL: cdnL},
 	}
 }
@@ -69,24 +90,44 @@ func (a adapter) Resolve(ctx context.Context, id string) (platform.Profile, erro
 }
 
 func (a adapter) FeedPage(ctx context.Context, kind, externalID string, page int) (platform.PlayPage, error) {
-	if kind != model.KindScore {
-		return platform.PlayPage{}, fmt.Errorf("beatleader: no %s feed", kind)
+	switch kind {
+	case model.KindScore:
+		sp, err := a.api.Scores(ctx, externalID, page)
+		if errors.Is(err, ErrNotFound) {
+			// BeatLeader answers 404 for a player without scores: the end of the
+			// listing. A vanished player is caught by Resolve (spec §5.2).
+			return platform.PlayPage{}, nil
+		}
+		if err != nil {
+			return platform.PlayPage{}, err
+		}
+		plays, refused := Plays(sp.Data, a.api.ReplayAllowed)
+		return platform.PlayPage{Plays: plays, TotalPages: sp.Metadata.TotalPages(), Refused: refused}, nil
+	case model.KindAttempt:
+		sp, err := a.api.Attempts(ctx, externalID, page, ScoresPageSize)
+		if err != nil {
+			return platform.PlayPage{}, err // 401 = private history: platform.ErrUnauthorized
+		}
+		plays, skipped, refused := AttemptPlays(sp.Data, a.api.ReplayAllowed, a.api.ScoreReplay)
+		return platform.PlayPage{Plays: plays, TotalPages: sp.Metadata.TotalPages(), Refused: refused, Skipped: skipped}, nil
 	}
-	sp, err := a.api.Scores(ctx, externalID, page)
-	if errors.Is(err, ErrNotFound) {
-		// BeatLeader answers 404 for a player without scores: the end of the
-		// listing. A vanished player is caught by Resolve (spec §5.2).
-		return platform.PlayPage{}, nil
-	}
-	if err != nil {
-		return platform.PlayPage{}, err
-	}
-	plays, refused := Plays(sp.Data, a.api.ReplayAllowed)
-	return platform.PlayPage{Plays: plays, TotalPages: sp.Metadata.TotalPages(), Refused: refused}, nil
+	return platform.PlayPage{}, fmt.Errorf("beatleader: no %s feed", kind)
 }
 
-func (adapter) ProbeAccess(context.Context, string, string) (string, int64, error) {
-	return model.AccessNA, 0, nil
+// ProbeAccess reads one attempt: 200 means the history is public, 401 private
+// (spec §2.2). The score feed needs no probe.
+func (a adapter) ProbeAccess(ctx context.Context, kind, externalID string) (string, int64, error) {
+	if kind != model.KindAttempt {
+		return model.AccessNA, 0, nil
+	}
+	sp, err := a.api.Attempts(ctx, externalID, 1, 1)
+	switch {
+	case errors.Is(err, ErrUnauthorized):
+		return model.AccessPrivate, 0, nil
+	case err != nil:
+		return "", 0, err
+	}
+	return model.AccessPublic, int64(sp.Metadata.Total), nil
 }
 
 func (a adapter) Replay(ctx context.Context, ref platform.ReplayRef) (io.ReadCloser, error) {
@@ -139,6 +180,40 @@ func Plays(items []Score, allowed func(string) bool) ([]platform.Play, int) {
 		out = append(out, pl)
 	}
 	return out, refused
+}
+
+// attemptEnds maps BeatLeader's endType onto the stored vocabulary (spec §4.4).
+var attemptEnds = map[int]string{
+	1: model.EndClear, 2: model.EndFail, 3: model.EndRestart, 4: model.EndQuit, 5: model.EndPractice,
+}
+
+// AttemptPlays converts an attempts page (spec §4.6). A clear whose replay is
+// a score replay is the PB the scores feed archives: it is skipped (second
+// result). A replay off the allowlist is dropped and counted (third result).
+func AttemptPlays(items []Score, allowed, scoreReplay func(string) bool) (plays []platform.Play, skipped, refused int) {
+	for _, s := range items {
+		if s.EndType == 1 && s.Replay != "" && scoreReplay(s.Replay) {
+			skipped++
+			continue
+		}
+		pl := play(s)
+		end, ok := attemptEnds[s.EndType]
+		if !ok {
+			end = model.EndUnknown
+		}
+		t := s.Time
+		pl.Kind, pl.EndType, pl.EndTime, pl.PersonalBest = model.KindAttempt, end, &t, false
+		pl.SetAt = s.Timepost.Time()
+		if s.Replay != "" {
+			if allowed(s.Replay) {
+				pl.HasReplay, pl.ReplayURL = true, s.Replay
+			} else {
+				refused++
+			}
+		}
+		plays = append(plays, pl)
+	}
+	return plays, skipped, refused
 }
 
 // play maps the fields scores and attempts share.

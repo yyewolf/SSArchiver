@@ -26,10 +26,13 @@ func decodeScores(t *testing.T) beatleader.ScorePage {
 }
 
 type fakeAPI struct {
-	player    beatleader.Player
-	page      beatleader.ScorePage
-	err       error
-	replayURL string
+	player     beatleader.Player
+	page       beatleader.ScorePage
+	err        error
+	attempts   beatleader.ScorePage
+	attemptErr error
+	calls      []string // "attempts:page:count"
+	replayURL  string
 }
 
 func (f *fakeAPI) Player(context.Context, string) (beatleader.Player, error) { return f.player, f.err }
@@ -37,6 +40,13 @@ func (f *fakeAPI) Player(context.Context, string) (beatleader.Player, error) { r
 func (f *fakeAPI) Scores(context.Context, string, int) (beatleader.ScorePage, error) {
 	return f.page, f.err
 }
+
+func (f *fakeAPI) Attempts(_ context.Context, _ string, page, count int) (beatleader.ScorePage, error) {
+	f.calls = append(f.calls, fmt.Sprintf("attempts:%d:%d", page, count))
+	return f.attempts, f.attemptErr
+}
+
+func (f *fakeAPI) ScoreReplay(u string) bool { return beatleader.NewClient(nil, nil).ScoreReplay(u) }
 
 func (f *fakeAPI) Replay(_ context.Context, u string) (io.ReadCloser, error) {
 	f.replayURL = u
@@ -103,9 +113,6 @@ func TestFeedPage(t *testing.T) {
 	if err != nil || len(pg.Plays) != 3 || pg.TotalPages != 1 || pg.Refused != 1 {
 		t.Fatalf("page = %+v %v", pg, err)
 	}
-	if _, err := a.FeedPage(ctx, model.KindAttempt, "1", 1); err == nil {
-		t.Fatal("no attempts feed in this plan")
-	}
 
 	api.err = fmt.Errorf("%w: /player/1/scores", beatleader.ErrNotFound)
 	pg, err = a.FeedPage(ctx, model.KindScore, "1", 1)
@@ -150,8 +157,16 @@ func TestRegistryEntry(t *testing.T) {
 		bl.Legacy || bl.ReplayExt != ".bsor" || bl.ProfileURL("7") != "https://beatleader.com/u/7" {
 		t.Fatalf("entry = %+v", bl)
 	}
-	if f, ok := bl.Feed(model.KindScore); !ok || f.Optional || len(bl.Feeds) != 1 {
+	if f, ok := bl.Feed(model.KindScore); !ok || f.Optional || len(bl.Feeds) != 2 {
 		t.Fatalf("feeds = %+v", bl.Feeds)
+	}
+	att, ok := bl.Feed(model.KindAttempt)
+	if !ok || !att.Optional || !att.NeedsAccess || att.AccessHint == nil ||
+		att.AccessHint.Title != "Attempt history is private on BeatLeader" || len(att.AccessHint.Steps) != 4 ||
+		!strings.Contains(att.AccessHint.Steps[2], "Public history (auto-synced)") ||
+		!strings.Contains(att.AccessHint.Steps[3], "Reload the page") ||
+		att.AccessHint.LinkURL != "https://beatleader.com/settings" || att.AccessHint.Note == "" {
+		t.Fatalf("attempt feed = %+v %+v", att, att.AccessHint)
 	}
 	if a := bl.Adapter; len(a.Limiters()) != 2 || a.FeedLimiter(model.KindScore) != beatleader.APILimiterName ||
 		a.ReplayLimiter(model.KindScore) != beatleader.APILimiterName {
@@ -174,5 +189,89 @@ func TestRegistryEntry(t *testing.T) {
 	}
 	if _, _, err := reg.ParseRef("https://beatleader.com/leaderboard/1", ""); err == nil {
 		t.Error("only profile URLs are player references")
+	}
+}
+
+func decodeAttempts(t *testing.T) beatleader.ScorePage {
+	t.Helper()
+	var sp beatleader.ScorePage
+	if err := json.Unmarshal(fixture(t, "attempts.json"), &sp); err != nil {
+		t.Fatal(err)
+	}
+	return sp
+}
+
+func TestAttemptPlays(t *testing.T) {
+	c := beatleader.NewClient(nil, nil)
+	plays, skipped, refused := beatleader.AttemptPlays(decodeAttempts(t).Data, c.ReplayAllowed, c.ScoreReplay)
+	if skipped != 2 || refused != 1 || len(plays) != 6 {
+		t.Fatalf("plays=%d skipped=%d refused=%d", len(plays), skipped, refused)
+	}
+	var got []string
+	for _, p := range plays {
+		got = append(got, p.ExternalID+"/"+p.EndType)
+	}
+	want := "148437271/quit 148432628/restart 148432157/clear 144609827/practice 26723243/fail 26700001/unknown"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("plays = %v (the two PB clears, on the CDN and on replays-storage, are skipped)", got)
+	}
+	q := plays[0]
+	if q.Kind != model.KindAttempt || q.PersonalBest || q.EndTime == nil || *q.EndTime != 22.91243 ||
+		!q.SetAt.Equal(time.Date(2026, 10, 4, 21, 27, 37, 0, time.UTC)) || !q.HasReplay ||
+		!strings.HasPrefix(q.ReplayURL, "https://api.beatleader.xyz/otherreplays/") || q.Leaderboard.ExternalID != "51e10x91" {
+		t.Fatalf("quit = %+v", q)
+	}
+	if clear := plays[2]; !clear.HasReplay || clear.ReplayURL != "https://api.beatleader.xyz/otherreplays/34897106.bsor" {
+		t.Fatalf("a non-PB clear is kept with its replay: %+v", clear)
+	}
+	if pr := plays[3]; pr.ModifiedScore != 38645 || pr.UnmodifiedScore != 193229 || pr.Mods != "SS,NF" {
+		t.Fatalf("practice = %+v", pr)
+	}
+	fail := plays[4]
+	if fail.HasReplay || fail.ReplayURL != "" || !fail.SetAt.Equal(time.Date(2024, 1, 27, 12, 2, 18, 0, time.UTC)) ||
+		fail.Leaderboard.Status != "RANKED" || fail.Leaderboard.Stars != 10.066875 {
+		t.Fatalf("fail without a replay = %+v", fail)
+	}
+	if u := plays[5]; u.HasReplay || u.ReplayURL != "" || u.HMD != "Quest 3" {
+		t.Fatalf("refused replay = %+v", u)
+	}
+}
+
+func TestAttemptFeedAndProbe(t *testing.T) {
+	ctx := context.Background()
+	api := &fakeAPI{attempts: decodeAttempts(t)}
+	a := beatleader.NewPlatform(api, nil, nil).Adapter
+
+	pg, err := a.FeedPage(ctx, model.KindAttempt, "76561198038925092", 2)
+	if err != nil || len(pg.Plays) != 6 || pg.Skipped != 2 || pg.TotalPages != 1 {
+		t.Fatalf("page = %d plays, skipped %d, pages %d, %v", len(pg.Plays), pg.Skipped, pg.TotalPages, err)
+	}
+	if pg.Refused != 5 { // this fake only allowlists the CDN
+		t.Fatalf("refused = %d", pg.Refused)
+	}
+	if len(api.calls) != 1 || api.calls[0] != "attempts:2:100" {
+		t.Fatalf("calls = %v", api.calls)
+	}
+
+	if access, total, err := a.ProbeAccess(ctx, model.KindAttempt, "x"); access != model.AccessPublic || total != 8 || err != nil {
+		t.Fatalf("public probe = %s %d %v", access, total, err)
+	}
+	if api.calls[1] != "attempts:1:1" {
+		t.Fatalf("a probe reads one item: %v", api.calls)
+	}
+	api.attemptErr = fmt.Errorf("%w: /player/x/scoresstats", beatleader.ErrUnauthorized)
+	if access, _, err := a.ProbeAccess(ctx, model.KindAttempt, "x"); access != model.AccessPrivate || err != nil {
+		t.Fatalf("private probe = %s %v", access, err)
+	}
+	if _, err := a.FeedPage(ctx, model.KindAttempt, "x", 1); !errors.Is(err, platform.ErrUnauthorized) {
+		t.Fatalf("a private listing reports ErrUnauthorized: %v", err)
+	}
+	api.attemptErr = fmt.Errorf("%w: x", beatleader.ErrRateLimited)
+	if _, _, err := a.ProbeAccess(ctx, model.KindAttempt, "x"); !errors.Is(err, platform.ErrRateLimited) {
+		t.Fatalf("other errors pass through: %v", err)
+	}
+	calls := len(api.calls)
+	if access, _, err := a.ProbeAccess(ctx, model.KindScore, "x"); access != model.AccessNA || err != nil || len(api.calls) != calls {
+		t.Fatal("the score feed needs no probe")
 	}
 }
