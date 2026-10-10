@@ -161,6 +161,17 @@ func (s *Store) RemovePlayer(playerID string) error {
 	return nil
 }
 
+// RemoveDir deletes one platform directory of a player ({root}/{player}/{dir}).
+func (s *Store) RemoveDir(playerID, dir string) error {
+	if !ValidPlayerID(playerID) || !dirRe.MatchString(dir) {
+		return fmt.Errorf("%w: %q/%q", ErrInvalidID, playerID, dir)
+	}
+	if err := os.RemoveAll(filepath.Join(s.root, playerID, dir)); err != nil {
+		return fmt.Errorf("storage: remove platform dir: %w", err)
+	}
+	return nil
+}
+
 // Scan deletes leftover *.tmp files and lists every replay file, both the
 // legacy {player}/{row}{ext} and the per-platform {player}/{dir}/{row}{ext}
 // layout; anything else is skipped.

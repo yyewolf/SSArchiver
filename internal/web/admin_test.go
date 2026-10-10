@@ -32,7 +32,7 @@ func TestLookupPlayer(t *testing.T) {
 	ok := e.do(http.MethodPost, "/admin/players/lookup", url.Values{"ref": {"https://scoresaber.com/u/1001?page=2"}}, withCookie(c), htmx("lookup-result"))
 	contains(t, ok.Body.String(), "Alice", "Track player", `value="1001"`)
 	bad := e.do(http.MethodPost, "/admin/players/lookup", url.Values{"ref": {"not a link"}}, withCookie(c), htmx("lookup-result"))
-	contains(t, bad.Body.String(), "Enter a ScoreSaber player ID")
+	contains(t, bad.Body.String(), "Invalid player reference: paste a profile URL or a player ID")
 	missing := e.do(http.MethodPost, "/admin/players/lookup", url.Values{"ref": {"9999"}}, withCookie(c), htmx("lookup-result"))
 	contains(t, missing.Body.String(), "No ScoreSaber player found")
 	e.seed()

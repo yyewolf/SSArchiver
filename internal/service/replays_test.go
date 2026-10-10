@@ -166,3 +166,27 @@ func TestNextRetryAt(t *testing.T) {
 		t.Fatalf("NextRetryAt = %v %v %v", at, ok, err)
 	}
 }
+
+func TestLinkedAccountOlderPlaysAreBackfill(t *testing.T) {
+	svc, _, clk := testutil.NewMultiService(t)
+	ctx := context.Background()
+	alice := mustAdd(t, svc, "1001")
+	clk.Advance(time.Hour) // the account is linked at T0+1h
+	if _, err := svc.LinkIdentity(ctx, alice, "abc", "testplat"); err != nil {
+		t.Fatal(err)
+	}
+	testutil.UpsertFake(t, svc, alice,
+		testutil.FakePlay(model.KindScore, "new", "lb-a", testutil.T0.Add(90*time.Minute), true),
+		testutil.FakePlay(model.KindScore, "old", "lb-b", testutil.T0.Add(-time.Hour), true))
+	sc, err := svc.NextReplay(ctx, service.TierNew, "", nil)
+	if err != nil || sc == nil || sc.ExternalID != "new" {
+		t.Fatalf("new tier = %+v %v", sc, err)
+	}
+	_ = svc.MarkReplayGone(ctx, sc.ID, "test")
+	if sc, _ := svc.NextReplay(ctx, service.TierNew, "", nil); sc != nil {
+		t.Fatalf("plays older than the link are backfill work, got %s", sc.ExternalID)
+	}
+	if sc, _ := svc.NextReplay(ctx, service.TierBackfill, "", nil); sc == nil || sc.ExternalID != "old" {
+		t.Fatalf("backfill tier = %+v", sc)
+	}
+}

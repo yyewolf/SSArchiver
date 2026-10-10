@@ -182,3 +182,28 @@ func TestPlatformLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoveDir(t *testing.T) {
+	s, _ := newStore(t)
+	legacy := storage.Loc{PlayerID: "p1", RowID: 1, Ext: ".dat"}
+	other := storage.Loc{PlayerID: "p1", Dir: "testplat", RowID: 2, Ext: ".tpr"}
+	for _, l := range []storage.Loc{legacy, other} {
+		if _, _, err := s.Put(l, strings.NewReader("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RemoveDir("p1", "testplat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path(other)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("platform directory not removed")
+	}
+	if _, err := os.Stat(s.Path(legacy)); err != nil {
+		t.Fatal("the legacy files of the player must stay")
+	}
+	for _, bad := range [][2]string{{"../x", "testplat"}, {"p1", ".."}, {"p1", ""}} {
+		if err := s.RemoveDir(bad[0], bad[1]); !errors.Is(err, storage.ErrInvalidID) {
+			t.Errorf("RemoveDir(%q, %q) = %v", bad[0], bad[1], err)
+		}
+	}
+}

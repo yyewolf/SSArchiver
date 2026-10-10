@@ -116,3 +116,34 @@ func TestChangedURLOfArchivedReplayIsLogged(t *testing.T) {
 		t.Fatalf("archived file must be untouched: %q %v", b, err)
 	}
 }
+
+// TestPlayerIDIsNeverAnAccountID gives a player the legacy-looking ID "123"
+// while its accounts are ScoreSaber 1001 and testplat abc: any code that
+// still treats players.id as a platform ID calls the platform with "123".
+func TestPlayerIDIsNeverAnAccountID(t *testing.T) {
+	e := newTPEnv(t)
+	ctx := context.Background()
+	e.svc.SetIDGenerator(func() string { return "123" })
+	id := testutil.AddPlayer(t, e.svc, "https://tp.example/u/abc")
+	if id != "123" {
+		t.Fatalf("id = %s", id)
+	}
+	if _, err := e.svc.LinkIdentity(ctx, id, "1001", model.PlatformScoreSaber); err != nil {
+		t.Fatal(err)
+	}
+	e.fc.scores["1001"] = e.fc.history("1001", 1, 2, testutil.T0.Add(-time.Hour))
+	e.fp.SetPlays(model.KindScore, "abc", testutil.FakePlay(model.KindScore, "s1", "lb-a", testutil.T0.Add(-time.Hour), true))
+	e.drain(t)
+	calls := e.fc.calls()
+	if len(calls) == 0 {
+		t.Fatal("ScoreSaber account never polled")
+	}
+	for _, c := range append(calls, e.fp.Calls...) {
+		if strings.Contains(c, "123") {
+			t.Fatalf("a platform was called with the player ID: %v %v", calls, e.fp.Calls)
+		}
+	}
+	if c, _ := e.svc.PlayerCounts(ctx, id); c.Archived != 3 {
+		t.Fatalf("both accounts archived under the one player: %+v", c)
+	}
+}

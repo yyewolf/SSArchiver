@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/db"
 	"github.com/yyewolf/ssarchiver/internal/db/query"
@@ -17,14 +19,83 @@ type Counts struct {
 	Scores, Archived, Pending, Failed, Gone int64
 }
 
-// Replays is the number of scores ScoreSaber offered a replay for.
+// Replays is the number of score rows the platform offered a replay for.
 func (c Counts) Replays() int64 { return c.Archived + c.Pending + c.Failed + c.Gone }
 
-// Identity is one linked platform account with its feeds.
+func (c *Counts) add(state string, n int64) {
+	c.Scores += n
+	switch state {
+	case model.ReplayArchived:
+		c.Archived += n
+	case model.ReplayPending:
+		c.Pending += n
+	case model.ReplayFailed:
+		c.Failed += n
+	case model.ReplayGone:
+		c.Gone += n
+	}
+}
+
+// playerCounts are one player's row counts.
+type playerCounts struct {
+	scores Counts                  // score rows of every platform: the headline counts
+	byKind map[PlatformKind]Counts // per platform and row kind
+}
+
+func (s *Service) countsBy(ctx context.Context, playerID string) (map[string]playerCounts, error) {
+	type row struct {
+		PlayerID, Platform, Kind, ReplayState string
+		N                                     int64
+	}
+	var rows []row
+	tx := s.db.WithContext(ctx).Model(&model.Score{}).
+		Select("player_id, platform, kind, replay_state, COUNT(*) AS n").Group("player_id, platform, kind, replay_state")
+	if playerID != "" {
+		tx = tx.Where("player_id = ?", playerID)
+	}
+	if err := tx.Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("service: count scores: %w", err)
+	}
+	out := map[string]playerCounts{}
+	for _, r := range rows {
+		pc := out[r.PlayerID]
+		if pc.byKind == nil {
+			pc.byKind = map[PlatformKind]Counts{}
+		}
+		k := PlatformKind{r.Platform, r.Kind}
+		c := pc.byKind[k]
+		c.add(r.ReplayState, r.N)
+		pc.byKind[k] = c
+		if r.Kind == model.KindScore {
+			pc.scores.add(r.ReplayState, r.N)
+		}
+		out[r.PlayerID] = pc
+	}
+	return out, nil
+}
+
+// withCounts fills each account's per-kind counts.
+func withCounts(ids []Identity, pc playerCounts) []Identity {
+	for i := range ids {
+		ids[i].Counts = map[string]Counts{}
+		for k, c := range pc.byKind {
+			if k.Platform == ids[i].Platform {
+				ids[i].Counts[k.Kind] = c
+			}
+		}
+	}
+	return ids
+}
+
+// Identity is one linked platform account with its feeds and row counts.
 type Identity struct {
 	model.PlayerPlatform
-	Feeds []model.SyncFeed
+	Feeds  []model.SyncFeed
+	Counts map[string]Counts // by row kind (model.Kind*)
 }
+
+// Scores are the counts of the account's score rows.
+func (i Identity) Scores() Counts { return i.Counts[model.KindScore] }
 
 // Feed returns the account's feed of the given kind (zero value when missing).
 func (i Identity) Feed(kind string) model.SyncFeed {
@@ -148,7 +219,7 @@ func (s *Service) GetPlayerSummary(ctx context.Context, id string) (PlayerSummar
 	if err != nil {
 		return PlayerSummary{}, err
 	}
-	return PlayerSummary{Player: *p, Counts: counts[id], Identities: ids[id]}, nil
+	return PlayerSummary{Player: *p, Counts: counts[id].scores, Identities: withCounts(ids[id], counts[id])}, nil
 }
 
 // ResolvePlayer parses an admin's reference (profile URL or ID; platformName
@@ -156,7 +227,8 @@ func (s *Service) GetPlayerSummary(ctx context.Context, id string) (PlayerSummar
 func (s *Service) ResolvePlayer(ctx context.Context, ref, platformName string) (platform.Platform, platform.Profile, error) {
 	p, id, err := s.reg.ParseRef(ref, platformName)
 	if err != nil {
-		return platform.Platform{}, platform.Profile{}, ErrInvalidPlayerRef
+		// "invalid player reference: paste a profile URL or a player ID"
+		return platform.Platform{}, platform.Profile{}, fmt.Errorf("%w%s", ErrInvalidPlayerRef, strings.TrimPrefix(err.Error(), platform.ErrInvalidRef.Error()))
 	}
 	prof, err := p.Adapter.Resolve(ctx, id)
 	if errors.Is(err, platform.ErrNotFound) {
@@ -201,14 +273,35 @@ func (s *Service) freePlayerID(ctx context.Context) (string, error) {
 	return "", errors.New("service: could not draw a free player ID")
 }
 
+// linkedElsewhere returns a *LinkedElsewhereError when the account is
+// already linked to a player, nil when it is free.
+func (s *Service) linkedElsewhere(ctx context.Context, plat platform.Platform, externalID string) error {
+	p, err := s.PlayerByIdentity(ctx, plat.Name, externalID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return &LinkedElsewhereError{Platform: plat.DisplayName, ExternalID: externalID, PlayerID: p.ID, PlayerName: p.Name}
+}
+
+// createRequiredFeeds creates the always-on feeds of a new account.
+func createRequiredFeeds(ctx context.Context, tx *query.Query, playerID string, plat platform.Platform, now time.Time) error {
+	for _, f := range plat.RequiredFeeds() {
+		if err := tx.SyncFeed.WithContext(ctx).Create(newFeed(playerID, plat.Name, f.Kind, now, model.AccessNA)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) AddPlayer(ctx context.Context, ref, platformName string) (*model.Player, error) {
 	plat, prof, err := s.ResolvePlayer(ctx, ref, platformName)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.PlayerByIdentity(ctx, plat.Name, prof.ExternalID); err == nil {
-		return nil, ErrPlayerExists
-	} else if !errors.Is(err, ErrNotFound) {
+	if err := s.linkedElsewhere(ctx, plat, prof.ExternalID); err != nil {
 		return nil, err
 	}
 	id, err := s.freePlayerID(ctx)
@@ -226,12 +319,7 @@ func (s *Service) AddPlayer(ctx context.Context, ref, platformName string) (*mod
 		}); err != nil {
 			return err
 		}
-		for _, f := range plat.RequiredFeeds() {
-			if err := tx.SyncFeed.WithContext(ctx).Create(newFeed(id, plat.Name, f.Kind, now, model.AccessNA)); err != nil {
-				return err
-			}
-		}
-		return nil
+		return createRequiredFeeds(ctx, tx, id, plat, now)
 	})
 	if err != nil {
 		if db.IsDuplicate(err) {
@@ -311,7 +399,7 @@ func (s *Service) ListPlayers(ctx context.Context, includeDisabled bool) ([]Play
 	}
 	out := make([]PlayerSummary, 0, len(players))
 	for _, p := range players {
-		out = append(out, PlayerSummary{Player: *p, Counts: counts[p.ID], Identities: ids[p.ID]})
+		out = append(out, PlayerSummary{Player: *p, Counts: counts[p.ID].scores, Identities: withCounts(ids[p.ID], counts[p.ID])})
 	}
 	return out, nil
 }
@@ -321,41 +409,7 @@ func (s *Service) PlayerCounts(ctx context.Context, id string) (Counts, error) {
 	if err != nil {
 		return Counts{}, err
 	}
-	return counts[id], nil
-}
-
-func (s *Service) countsBy(ctx context.Context, playerID string) (map[string]Counts, error) {
-	type row struct {
-		PlayerID    string
-		ReplayState string
-		N           int64
-	}
-	var rows []row
-	tx := s.db.WithContext(ctx).Model(&model.Score{}).
-		Select("player_id, replay_state, COUNT(*) AS n").Group("player_id, replay_state")
-	if playerID != "" {
-		tx = tx.Where("player_id = ?", playerID)
-	}
-	if err := tx.Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("service: count scores: %w", err)
-	}
-	out := map[string]Counts{}
-	for _, r := range rows {
-		c := out[r.PlayerID]
-		c.Scores += r.N
-		switch r.ReplayState {
-		case model.ReplayArchived:
-			c.Archived += r.N
-		case model.ReplayPending:
-			c.Pending += r.N
-		case model.ReplayFailed:
-			c.Failed += r.N
-		case model.ReplayGone:
-			c.Gone += r.N
-		}
-		out[r.PlayerID] = c
-	}
-	return out, nil
+	return counts[id].scores, nil
 }
 
 func (s *Service) SetPlayerEnabled(ctx context.Context, id string, enabled bool) error {

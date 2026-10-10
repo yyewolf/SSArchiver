@@ -17,10 +17,31 @@ import (
 )
 
 var (
-	ErrNotFound         = errors.New("not found")
-	ErrPlayerExists     = errors.New("player is already tracked")
-	ErrInvalidPlayerRef = errors.New("enter a ScoreSaber player ID or profile URL (https://scoresaber.com/u/<id>)")
+	ErrNotFound                = errors.New("not found")
+	ErrPlayerExists            = errors.New("player is already tracked")
+	ErrInvalidPlayerRef        = errors.New("invalid player reference")
+	ErrIdentityLinkedElsewhere = errors.New("account is tracked as another player")
+	ErrPlatformAlreadyLinked   = errors.New("this player already has an account on that platform")
+	ErrLastIdentity            = errors.New("a player keeps at least one account; delete the player instead")
 )
+
+// LinkedElsewhereError reports an account already tracked as another player
+// (spec §6.2: the admin merges the two players instead). It matches both
+// ErrIdentityLinkedElsewhere and ErrPlayerExists.
+type LinkedElsewhereError struct {
+	Platform   string // display name
+	ExternalID string
+	PlayerID   string
+	PlayerName string
+}
+
+func (e *LinkedElsewhereError) Error() string {
+	return fmt.Sprintf("this %s account is already tracked as %s; merge the two players to combine them", e.Platform, e.PlayerName)
+}
+
+func (e *LinkedElsewhereError) Unwrap() []error {
+	return []error{ErrIdentityLinkedElsewhere, ErrPlayerExists}
+}
 
 type Service struct {
 	db    *gorm.DB
