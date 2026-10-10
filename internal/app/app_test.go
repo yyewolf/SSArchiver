@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -173,5 +174,24 @@ func TestEndToEnd(t *testing.T) {
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("Serve did not stop")
+	}
+}
+
+func TestBeatLeaderRegistered(t *testing.T) {
+	cfg := config.Config{DataDir: t.TempDir(), Listen: "127.0.0.1:0", HourlyBudget: 300, LogLevel: "error"}
+	a, err := app.New(cfg, app.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if p, ok := a.Service.Platforms().Get("beatleader"); !ok || p.Slug != "bl" {
+		t.Fatalf("BeatLeader not registered: %+v", p)
+	}
+	var names []string
+	for _, l := range a.Worker.Status().Limiters {
+		names = append(names, l.Name)
+	}
+	if !slices.Equal(names, []string{"scoresaber", "beatleader/api", "beatleader/cdn"}) {
+		t.Fatalf("limiters = %v", names)
 	}
 }

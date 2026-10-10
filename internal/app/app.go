@@ -15,6 +15,7 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/api"
 	"github.com/yyewolf/ssarchiver/internal/archiver"
+	"github.com/yyewolf/ssarchiver/internal/beatleader"
 	"github.com/yyewolf/ssarchiver/internal/buildinfo"
 	"github.com/yyewolf/ssarchiver/internal/config"
 	"github.com/yyewolf/ssarchiver/internal/db"
@@ -27,7 +28,8 @@ import (
 )
 
 type Options struct {
-	ScoreSaberURL string // tests point this at a fake server
+	ScoreSaberURL string // tests point these at fake servers
+	BeatLeaderURL string
 }
 
 type App struct {
@@ -56,7 +58,15 @@ func New(cfg config.Config, opts Options) (*App, error) {
 	if opts.ScoreSaberURL != "" {
 		copts = append(copts, scoresaber.WithBaseURL(opts.ScoreSaberURL))
 	}
-	reg, err := platform.NewRegistry(scoresaber.NewPlatform(scoresaber.NewClient(limiter, copts...), limiter))
+	blAPI, blCDN := beatleader.NewAPILimiter(), beatleader.NewCDNLimiter()
+	var bopts []beatleader.Option
+	if opts.BeatLeaderURL != "" {
+		bopts = append(bopts, beatleader.WithBaseURL(opts.BeatLeaderURL))
+	}
+	reg, err := platform.NewRegistry(
+		scoresaber.NewPlatform(scoresaber.NewClient(limiter, copts...), limiter),
+		beatleader.NewPlatform(beatleader.NewClient(blAPI, blCDN, bopts...), blAPI, blCDN),
+	)
 	if err != nil {
 		_ = db.Close(gdb)
 		return nil, fmt.Errorf("app: platforms: %w", err)

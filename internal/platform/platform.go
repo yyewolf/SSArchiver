@@ -73,6 +73,7 @@ type Play struct {
 type PlayPage struct {
 	Plays      []Play
 	TotalPages int
+	Refused    int // plays whose replay URL is not on the platform's allowlist; kept without a replay
 }
 
 // ReplayRef identifies the replay of a stored row.
@@ -105,6 +106,7 @@ type Platform struct {
 	DisplayName string
 	Priority    int  // lower wins for the player's display identity
 	Legacy      bool // ScoreSaber only: bare IDs, legacy routes and storage layout
+	PBOnly      bool // the score feed lists current personal bests only: older rows lose personal_best (spec §4.6)
 	ReplayExt   string
 	ImageHosts  []string
 	ProfileURL  func(externalID string) string
