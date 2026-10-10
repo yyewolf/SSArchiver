@@ -75,6 +75,15 @@ Public API `https://api.beatleader.xyz`, no auth (swagger: `/swagger/blapi/swagg
   outdated(5), inevent(6), oST(7)`.
 - Score replays: `https://cdn.replays.beatleader.xyz/{scoreId}-{playerId}-{diff}-{mode}-{HASH}.bsor`.
   Plain GET, no auth, not pruned. BSOR format; ArcViewer plays it from any `replayURL`.
+  The listing can also point a score at
+  `https://api.beatleader.xyz/replays-storage/{scoreId}-{playerId}-{diff}-{mode}-{HASH}.bsor`
+  (verified 2026-10-10 on the instance owner's scores). That host serves the file directly (no
+  redirect; `HEAD` answers 405) and its responses carry the API rate-limit headers, so these
+  downloads consume the API limit.
+- In score payloads `timeset` is a **string** of unix seconds (`"1706356788"`); `timepost` is a
+  number. `GET /player/{id}?stats=false` skips the heavy statistics block.
+- Avatars are on `cdn.assets.beatleader.xyz` or, for Steam accounts, on Steam's CDN
+  (`avatars.akamai.steamstatic.com`).
 - Rate limits: headers `x-rate-limit-limit: 10s`, `x-rate-limit-remaining`, `x-rate-limit-reset`
   (RFC3339). Observed 50 requests per 10 s window.
 - Covers on `eu.cdn.beatsaver.com` (also `cdn.beatsaver.com`, `na.cdn.beatsaver.com`); full
@@ -112,8 +121,11 @@ Public API `https://api.beatleader.xyz`, no auth (swagger: `/swagger/blapi/swagg
   `maxCombo`, `hmd`, `leaderboardId`, an embedded `leaderboard` (same shape as on scores), and
   `replay` (URL or **null**).
 - Attempt replays:
-  - A `clear` attempt that became the personal best points at the **same**
-    `cdn.replays.beatleader.xyz` file as the score.
+  - A `clear` attempt that became the personal best points at the **same** score replay file
+    as the score (`cdn.replays.beatleader.xyz`; the scores listing may name the same score's
+    file under `api.beatleader.xyz/replays-storage/`).
+  - A `clear` attempt that did not become the personal best points at
+    `https://api.beatleader.xyz/otherreplays/{n}.bsor` and is kept.
   - Every other attempt points at `https://api.beatleader.xyz/otherreplays/{playerId}-{n}-{diff}-{mode}-{HASH}.bsor`.
     It is served by the API host and **consumes the API rate limit**. The download is gated by the
     **same** `ShowStatsPublic` rule (server source, `ReplaysProxyController.GetOtherReplay`; pinned
@@ -320,8 +332,8 @@ Add `platform`, `kind`, `end_type`, `end_time` (nullable float, seconds into the
   leaderboard get `personal_best=false`.
 - BeatLeader attempts: as above with `kind='attempt'`, `end_type` from `endType`, `end_time` =
   `time`, `set_at` = `timepost`, `personal_best` = false, `external_id` = attempt ID. **Skipped**
-  when `endType=clear` and the replay is on `cdn.replays.beatleader.xyz` (it is the PB score the
-  scores feed archives).
+  when `endType=clear` and the replay is a score replay (`cdn.replays.beatleader.xyz` or
+  `api.beatleader.xyz/replays-storage/`): it is the PB score the scores feed archives.
 - The replay state machine (`none/pending/archived/gone/failed`, attempts counter, backoff) is
   shared by all rows. `MarkReplayGone` and similar messages name the row's platform instead of
   hard-coding "ScoreSaber".
@@ -408,9 +420,13 @@ count)`, `Replay(ctx, url)`.
 
 - Limiters: single 10 s sliding window; `beatleader/api` 40 req (headroom under the observed 50),
   `beatleader/cdn` 20 req. Both use an injectable clock and block until `x-rate-limit-reset` on
-  exhaustion or 429. `otherreplays` downloads use the API limiter.
-- Replay allowlist: `https://cdn.replays.beatleader.xyz/` and
-  `https://api.beatleader.xyz/otherreplays/`. `CheckRedirect` enforces the same list.
+  exhaustion or 429. `replays-storage` and `otherreplays` downloads use the API limiter; only
+  `cdn.replays` downloads use the CDN limiter. `ReplayLimiter(kind)` names the API limiter for
+  every kind (most replay downloads hit the API host), and the CDN limiter's `Wait` stays the
+  safety net for CDN downloads.
+- Replay allowlist: `https://cdn.replays.beatleader.xyz/`,
+  `https://api.beatleader.xyz/replays-storage/` and `https://api.beatleader.xyz/otherreplays/`.
+  `CheckRedirect` enforces the same list.
 
 Registry entry: `Name: "beatleader"`, `Slug: "bl"`, `Priority: 10`, `ReplayExt: ".bsor"`, feeds
 `scores` (non-optional) and `attempts` (optional, `NeedsAccess`, hint in §6.3).
@@ -476,13 +492,16 @@ attempt pages hide the viewer and keep the download (checked during implementati
 the plan).
 
 CSP `img-src` is built from the registry's `ImageHosts`. BeatLeader adds `https://cdn.beatsaver.com
-https://*.cdn.beatsaver.com https://cdn.assets.beatleader.xyz`.
+https://*.cdn.beatsaver.com https://cdn.assets.beatleader.xyz https://avatars.akamai.steamstatic.com
+https://avatars.steamstatic.com`.
 
 ### 6.2 Admin JSON API (`/api/v1`, session-cookie auth)
 
 `PlayerPath` pattern becomes `^[a-z0-9-]{1,40}$`; a merged-away ID resolves to its survivor.
-`{platform}` path params and the `platform` body fields take a registry `Name` (OpenAPI enum
-generated from the registry).
+`{platform}` path params and the `platform` body fields take a registry `Name`. They are checked
+against the registry at request time (**422** for an unknown name), and the operation
+descriptions list the registered names. huma struct tags are static, so the OpenAPI document
+carries no enum for them.
 
 | Operation | Notes |
 |---|---|
@@ -536,7 +555,7 @@ generated from the registry).
 |---|---|---|
 | `platform` | `all` (default) \| any registry name | Restrict to one platform |
 | `type` | comma list of `complete` (default) \| `fail` \| `quit` \| `restart` \| `practice` \| `all` | `complete` = `kind=score` rows plus `clear` attempts; the others = attempts with that end type; `all` = everything |
-| `min_score`, `max_score` | int64 | Inclusive bounds on `modified_score` (for attempts: the score when the run ended) |
+| `min_score`, `max_score` | digits (`^[0-9]{1,12}$`) | Inclusive bounds on `modified_score` (for attempts: the score when the run ended). Declared as digit strings because huma has no optional numeric query parameters |
 
 The default `type=complete` keeps the listing backward compatible: without optional feeds it
 returns exactly what it returns today. `service.ScoreFilter` carries the new fields;
