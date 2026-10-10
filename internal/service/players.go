@@ -189,7 +189,7 @@ func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, e
 	now := s.Now()
 	p := &model.Player{
 		ID: sp.ID, Name: sp.Name, AvatarURL: sp.Avatar, Country: sp.Country,
-		Enabled: true, AddedAt: now, BackfillState: model.BackfillPending, BackfillPage: 1,
+		Enabled: true, AddedAt: now,
 	}
 	err = s.q.Transaction(func(tx *query.Query) error {
 		if err := tx.Player.WithContext(ctx).Create(p); err != nil {

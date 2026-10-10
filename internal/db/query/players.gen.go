@@ -33,12 +33,6 @@ func newPlayer(db *gorm.DB, opts ...gen.DOOption) player {
 	_player.Country = field.NewString(tableName, "country")
 	_player.Enabled = field.NewBool(tableName, "enabled")
 	_player.AddedAt = field.NewTime(tableName, "added_at")
-	_player.LastPolledAt = field.NewTime(tableName, "last_polled_at")
-	_player.LastError = field.NewString(tableName, "last_error")
-	_player.BackfillState = field.NewString(tableName, "backfill_state")
-	_player.BackfillPage = field.NewInt(tableName, "backfill_page")
-	_player.BackfillTotalPages = field.NewInt(tableName, "backfill_total_pages")
-	_player.BackfillRetryAt = field.NewTime(tableName, "backfill_retry_at")
 
 	_player.fillFieldMap()
 
@@ -48,19 +42,13 @@ func newPlayer(db *gorm.DB, opts ...gen.DOOption) player {
 type player struct {
 	playerDo playerDo
 
-	ALL                field.Asterisk
-	ID                 field.String
-	Name               field.String
-	AvatarURL          field.String
-	Country            field.String
-	Enabled            field.Bool
-	AddedAt            field.Time
-	LastPolledAt       field.Time
-	LastError          field.String
-	BackfillState      field.String
-	BackfillPage       field.Int
-	BackfillTotalPages field.Int
-	BackfillRetryAt    field.Time
+	ALL       field.Asterisk
+	ID        field.String
+	Name      field.String
+	AvatarURL field.String
+	Country   field.String
+	Enabled   field.Bool
+	AddedAt   field.Time
 
 	fieldMap map[string]field.Expr
 }
@@ -83,12 +71,6 @@ func (p *player) updateTableName(table string) *player {
 	p.Country = field.NewString(table, "country")
 	p.Enabled = field.NewBool(table, "enabled")
 	p.AddedAt = field.NewTime(table, "added_at")
-	p.LastPolledAt = field.NewTime(table, "last_polled_at")
-	p.LastError = field.NewString(table, "last_error")
-	p.BackfillState = field.NewString(table, "backfill_state")
-	p.BackfillPage = field.NewInt(table, "backfill_page")
-	p.BackfillTotalPages = field.NewInt(table, "backfill_total_pages")
-	p.BackfillRetryAt = field.NewTime(table, "backfill_retry_at")
 
 	p.fillFieldMap()
 
@@ -113,19 +95,13 @@ func (p *player) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (p *player) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 12)
+	p.fieldMap = make(map[string]field.Expr, 6)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["name"] = p.Name
 	p.fieldMap["avatar_url"] = p.AvatarURL
 	p.fieldMap["country"] = p.Country
 	p.fieldMap["enabled"] = p.Enabled
 	p.fieldMap["added_at"] = p.AddedAt
-	p.fieldMap["last_polled_at"] = p.LastPolledAt
-	p.fieldMap["last_error"] = p.LastError
-	p.fieldMap["backfill_state"] = p.BackfillState
-	p.fieldMap["backfill_page"] = p.BackfillPage
-	p.fieldMap["backfill_total_pages"] = p.BackfillTotalPages
-	p.fieldMap["backfill_retry_at"] = p.BackfillRetryAt
 }
 
 func (p player) clone(db *gorm.DB) player {

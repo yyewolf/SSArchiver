@@ -194,7 +194,7 @@ func TestMigrateFreshDatabase(t *testing.T) {
 	q := query.Use(gdb)
 	now := time.Now().UTC()
 	for _, id := range []string{"a1", "a2"} {
-		if err := q.Player.WithContext(ctx).Create(&model.Player{ID: id, Name: id, Enabled: true, AddedAt: now, BackfillState: model.BackfillPending, BackfillPage: 1}); err != nil {
+		if err := q.Player.WithContext(ctx).Create(&model.Player{ID: id, Name: id, Enabled: true, AddedAt: now}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -224,5 +224,78 @@ func TestVerifyMigrationRejectsCountChange(t *testing.T) {
 	}
 	if err := db.VerifyMigration(gdb, db.RowCounts{}); err != nil {
 		t.Fatalf("empty database must verify, got %v", err)
+	}
+}
+
+var legacyColumns = []string{"backfill_state", "backfill_page", "backfill_total_pages", "backfill_retry_at", "last_polled_at", "last_error"}
+
+func playerColumns(t *testing.T, gdb *gorm.DB) map[string]bool {
+	t.Helper()
+	var names []string
+	if err := gdb.Raw("SELECT name FROM pragma_table_info('players')").Scan(&names).Error; err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, n := range names {
+		out[n] = true
+	}
+	return out
+}
+
+func TestMigrateDropsLegacyColumnsKeepingRows(t *testing.T) {
+	gdb, _ := openFixture(t)
+	if err := db.Migrate(gdb); err != nil {
+		t.Fatal(err)
+	}
+	cols := playerColumns(t, gdb)
+	for _, c := range legacyColumns {
+		if cols[c] {
+			t.Errorf("players.%s still present", c)
+		}
+	}
+	for _, c := range []string{"id", "name", "avatar_url", "country", "enabled", "added_at"} {
+		if !cols[c] {
+			t.Errorf("players.%s missing", c)
+		}
+	}
+	var idx int64
+	gdb.Raw("SELECT COUNT(*) FROM sqlite_master WHERE name = 'idx_players_backfill_state'").Scan(&idx)
+	if idx != 0 {
+		t.Error("idx_players_backfill_state not dropped")
+	}
+	// A table rebuild would have cascaded: every row must still be there.
+	for table, want := range map[string]int64{"players": 3, "scores": 4, "player_platforms": 3, "sync_feeds": 3, "sessions": 1} {
+		if got := count(t, gdb, table); got != want {
+			t.Errorf("%s: %d rows, want %d", table, got, want)
+		}
+	}
+	p, err := query.Use(gdb).Player.WithContext(context.Background()).Where(query.Use(gdb).Player.ID.Eq("111")).First()
+	if err != nil || p.Name != "Gone" || p.Enabled || !p.AddedAt.Equal(mustTime(t, "2026-10-09T11:00:00Z")) {
+		t.Fatalf("player 111 = %+v %v", p, err)
+	}
+}
+
+func TestMigrateSecondRunAfterDrop(t *testing.T) {
+	gdb, path := openFixture(t)
+	if err := db.Migrate(gdb); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(filepath.Dir(path), db.BackupName)
+	st1, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(gdb); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	st2, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st1.ModTime().Equal(st2.ModTime()) || st1.Size() != st2.Size() {
+		t.Fatal("the pre-upgrade backup must not be rewritten")
+	}
+	if got := count(t, gdb, "scores"); got != 4 {
+		t.Fatalf("scores = %d", got)
 	}
 }

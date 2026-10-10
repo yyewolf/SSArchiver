@@ -61,18 +61,12 @@ const (
 )
 
 type Player struct {
-	ID                 string    `gorm:"primaryKey"`
-	Name               string    `gorm:"not null"`
-	AvatarURL          string    `gorm:"not null"`
-	Country            string    `gorm:"not null"`
-	Enabled            bool      `gorm:"not null"`
-	AddedAt            time.Time `gorm:"not null"`
-	LastPolledAt       *time.Time
-	LastError          string `gorm:"not null"`
-	BackfillState      string `gorm:"not null;index"`
-	BackfillPage       int    `gorm:"not null"` // next page to fetch, 1-based
-	BackfillTotalPages int    `gorm:"not null"`
-	BackfillRetryAt    *time.Time
+	ID        string    `gorm:"primaryKey"` // opaque (spec §4.2); never a platform account ID
+	Name      string    `gorm:"not null"`
+	AvatarURL string    `gorm:"not null"`
+	Country   string    `gorm:"not null"`
+	Enabled   bool      `gorm:"not null"`
+	AddedAt   time.Time `gorm:"not null"`
 }
 
 // PlayerPlatform is one linked platform account of a player (spec §4.3).

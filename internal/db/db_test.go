@@ -27,7 +27,7 @@ func seed(t *testing.T, q *query.Query) {
 	t.Helper()
 	ctx := context.Background()
 	now := time.Now().UTC()
-	if err := q.Player.WithContext(ctx).Create(&model.Player{ID: "1", Name: "p", Enabled: true, AddedAt: now, BackfillState: model.BackfillPending, BackfillPage: 1}); err != nil {
+	if err := q.Player.WithContext(ctx).Create(&model.Player{ID: "1", Name: "p", Enabled: true, AddedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := q.Leaderboard.WithContext(ctx).Create(&model.Leaderboard{ID: 10, SongName: "Song"}); err != nil {

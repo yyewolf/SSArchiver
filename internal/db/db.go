@@ -111,6 +111,9 @@ func Migrate(gdb *gorm.DB) error {
 			}
 		}
 		if legacy {
+			if err := dropLegacyColumns(tx); err != nil {
+				return err
+			}
 			return verifyMigration(tx, before)
 		}
 		return nil
@@ -180,6 +183,37 @@ func backfillLegacy(tx *gorm.DB) error {
 	for _, s := range steps {
 		if err := tx.Exec(s.sql, s.args...).Error; err != nil {
 			return fmt.Errorf("legacy backfill: %w", err)
+		}
+	}
+	return nil
+}
+
+// legacyPlayerColumns moved to sync_feeds (spec §4.2) and are dropped from
+// upgraded databases.
+var legacyPlayerColumns = []string{
+	"backfill_state", "backfill_page", "backfill_total_pages", "backfill_retry_at", "last_polled_at", "last_error",
+}
+
+// dropLegacyColumns drops the moved players columns in place. Never use
+// Migrator().DropColumn here: the SQLite driver implements it as a table
+// rebuild whose DROP TABLE players cascades to every score and account under
+// foreign_keys(1) (spec §7). SQLite refuses to drop an indexed column, so the
+// index goes first.
+func dropLegacyColumns(tx *gorm.DB) error {
+	if err := tx.Exec("DROP INDEX IF EXISTS `idx_players_backfill_state`").Error; err != nil {
+		return fmt.Errorf("drop legacy index: %w", err)
+	}
+	for _, c := range legacyPlayerColumns {
+		ok, err := hasColumn(tx, "players", c)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		// #nosec G202 -- c comes from the constant list above
+		if err := tx.Exec("ALTER TABLE `players` DROP COLUMN `" + c + "`").Error; err != nil {
+			return fmt.Errorf("drop players.%s: %w", c, err)
 		}
 	}
 	return nil
