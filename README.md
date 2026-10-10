@@ -39,6 +39,17 @@ volumes:
 Bind mounts must be writable by UID 65532 (`chown -R 65532:65532 ./data`), or
 use Podman's `:U` volume option (`-v ./data:/data:U`).
 
+### Upgrading to multi-platform (from versions before platform support)
+
+The first start of this version migrates the database in place:
+
+- A copy of the database is saved first as `ssarchiver.pre-platforms.db` in the data directory. Keep it until you are happy with the upgrade; to roll back, stop the new version and put it back as `ssarchiver.db`.
+- The migration checks that no player, score or leaderboard row was lost and refuses to start otherwise (the error names the backup).
+- Existing players, URLs (`/p/{id}`, `/s/{id}`, `/embed/{id}`, `/r/{id}.dat`) and replay files are unchanged.
+- New players get an opaque ID (e.g. `/p/k7m2q9x4c1ab`). Readable links by account work for everyone: `/p/ss/{scoresaberID}` redirects to the player.
+- API: players gain `identities[]` (one per linked platform account, with their sync `feeds[]`); the top-level `last_polled_at`, `last_error` and `backfill` fields are deprecated. `GET /api/v1/players/by/{platform}/{id}` finds a player by account. `GET /api/v1/sync` gains `limiters[]`.
+- A ScoreSaber "player not found" now disables that account instead of the player; enabling the player again re-enables its accounts.
+
 ## Configuration
 
 | Variable | Flag | Default | Meaning |
@@ -96,6 +107,10 @@ make test lint
 make run        # build and serve on :8080 with ./data
 make dev        # templ watch + live reload proxy
 ```
+
+### Adding a platform
+
+Platforms are registered in `internal/app/app.go`. A platform is a client package (like `internal/scoresaber`) that returns a `platform.Platform` descriptor: name/slug, replay extension, profile URL parsing, feeds, and an `Adapter` that resolves players, lists feed pages as `platform.Play`s, downloads replays and exposes its rate limiters. No migration is needed: platform names are plain strings in the database. `internal/testutil.FakePlatform` is a complete minimal example, exercised end to end by `internal/archiver/generic_test.go`.
 
 ## Automation
 

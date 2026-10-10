@@ -21,28 +21,12 @@ import (
 func openFixture(t *testing.T) (*gorm.DB, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ssarchiver.db")
+	testutil.LoadSQLFile(t, path, "testdata/v1.sql")
 	gdb, err := db.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close(gdb) })
-	raw, err := os.ReadFile("testdata/v1.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "--") {
-			continue
-		}
-		if _, err := sqlDB.Exec(line); err != nil {
-			t.Fatalf("fixture: %v\n%s", err, line)
-		}
-	}
 	return gdb, path
 }
 
