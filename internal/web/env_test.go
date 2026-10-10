@@ -43,12 +43,24 @@ func newEnv(t *testing.T) *testEnv { return newEnvWith(t, nil) }
 // newEnvWith also registers the fake third platform when fp is not nil.
 func newEnvWith(t *testing.T, fp *testutil.FakePlatform) *testEnv {
 	t.Helper()
+	vh := viewer.NewHandler(fstest.MapFS{"index.html.gz": {Data: testutil.Gzip("<html>viewer</html>")}}, "test")
+	return newEnvCore(t, fp, vh)
+}
+
+// newEnvNoViewer is newEnv with no bundled ArcViewer build.
+func newEnvNoViewer(t *testing.T) *testEnv {
+	t.Helper()
+	vh := viewer.NewHandler(fstest.MapFS{}, "test")
+	return newEnvCore(t, nil, vh)
+}
+
+func newEnvCore(t *testing.T, fp *testutil.FakePlatform, vh *viewer.Handler) *testEnv {
+	t.Helper()
 	plats := []platform.Platform{scoresaber.NewPlatform(&testutil.Resolver{Players: testutil.DefaultPlayers()}, nil)}
 	if fp != nil {
 		plats = append(plats, fp.Platform())
 	}
 	svc, _, clk := testutil.NewServiceWith(t, plats...)
-	vh := viewer.NewHandler(fstest.MapFS{"index.html.gz": {Data: testutil.Gzip("<html>viewer</html>")}}, "test")
 	st := &statusStub{st: archiver.Status{State: archiver.StateIdle, Since: testutil.T0}}
 	h := web.New(web.Deps{Service: svc, Status: st, Viewer: vh, Config: config.Config{HourlyBudget: 300, BaseURL: "https://replays.example.com"}})
 	mux := http.NewServeMux()

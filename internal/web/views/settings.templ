@@ -44,12 +44,28 @@ templ ViewerSettings(v SettingsView) {
 					Replay viewer
 				}
 				@card.Description() {
-					Default headset rendering for replays watched in the embedded ArcViewer. Visitors can still change these in the viewer.
+					The viewer score pages embed by default, plus default headset rendering for the embedded ArcViewer. Visitors can still change the viewer, and these settings in it.
 				}
 			}
 			@card.Content() {
 				<form hx-post="/admin/settings/viewer" hx-target="#settings-viewer" hx-swap="outerHTML" class="flex flex-col gap-4">
 					@FormError(v.Error)
+					@field.Field() {
+						@field.Label(field.LabelProps{For: "default_viewer"}) {
+							Default viewer
+						}
+						@nativeselect.NativeSelect(nativeselect.Props{ID: "default_viewer", Name: "default_viewer"}) {
+							@nativeselect.Option(nativeselect.OptionProps{Value: service.ViewerBeatLeader, Selected: v.Settings.ReplayViewer == service.ViewerBeatLeader}) {
+								BeatLeader
+							}
+							@nativeselect.Option(nativeselect.OptionProps{Value: service.ViewerArcViewer, Selected: v.Settings.ReplayViewer == service.ViewerArcViewer}) {
+								ArcViewer
+							}
+						}
+						@field.Description() {
+							BeatLeader's web viewer plays replays from BeatLeader and ScoreSaber; ArcViewer is bundled with this build.
+						}
+					}
 					@field.Field() {
 						<div class="flex items-center gap-2">
 							@input.Input(input.Props{ID: "show_headset", Name: "show_headset", Type: "checkbox", Class: "size-4", Attributes: templ.Attributes{"checked": v.Settings.ViewerShowHeadset}})

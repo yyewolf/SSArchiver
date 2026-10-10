@@ -154,7 +154,7 @@ func TestRegistryEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bl.Name != beatleader.Name || bl.Slug != "bl" || bl.DisplayName != "BeatLeader" || bl.Priority != 10 || !bl.PBOnly ||
-		bl.Legacy || bl.ReplayExt != ".bsor" || bl.ProfileURL("7") != "https://beatleader.com/u/7" {
+		bl.Legacy || bl.ReplayExt != ".bsor" || !bl.BSOR || bl.ProfileURL("7") != "https://beatleader.com/u/7" {
 		t.Fatalf("entry = %+v", bl)
 	}
 	if f, ok := bl.Feed(model.KindScore); !ok || f.Optional || len(bl.Feeds) != 2 {

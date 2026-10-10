@@ -30,7 +30,7 @@ var (
 func NewPlatform(api API, l *Limiter) platform.Platform {
 	return platform.Platform{
 		Name: model.PlatformScoreSaber, Slug: "ss", DisplayName: "ScoreSaber", Priority: 0, Legacy: true,
-		ReplayExt: ".dat", ImageHosts: []string{"https://cdn.scoresaber.com"},
+		BSOR: true, ReplayExt: ".dat", ImageHosts: []string{"https://cdn.scoresaber.com"},
 		ProfileURL: func(id string) string { return "https://scoresaber.com/u/" + id },
 		ParseURL: func(in string) (string, bool) {
 			m := profileURLRe.FindStringSubmatch(strings.TrimSpace(in))

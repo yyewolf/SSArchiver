@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"math"
 	"net/url"
+	"strings"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 )
+
+// beatLeaderViewerURL is BeatLeader's hosted web replay viewer
+// (BeatSaber-Web-Replays); it sends no framing restrictions.
+const beatLeaderViewerURL = "https://replay.beatleader.com"
 
 type platformsKey struct{}
 
@@ -136,4 +141,42 @@ func ViewerSrc(ctx context.Context, base string, s *model.Score, autoplay, loop,
 		}
 	}
 	return "/viewer/?" + v.Encode()
+}
+
+// BeatLeaderPlays reports whether BeatLeader's viewer can load a row's replay:
+// open-replay platforms only (its link loader wants a .bsor name).
+func BeatLeaderPlays(ctx context.Context, s *model.Score) bool {
+	if reg := Platforms(ctx); reg != nil {
+		if p, ok := reg.Get(s.Platform); ok {
+			return p.BSOR
+		}
+	}
+	return false
+}
+
+// BeatLeaderSrc is the hosted BeatLeader viewer URL that plays one archived
+// replay. The replay link is absolute and ends in .bsor (the viewer rejects
+// other extensions); the map itself is resolved from BeatSaver by the hash
+// inside the replay file.
+func BeatLeaderSrc(ctx context.Context, base string, s *model.Score, autoplay, loop bool) string {
+	v := url.Values{}
+	v.Set("link", base+bsorReplayPath(ctx, s))
+	if autoplay {
+		v.Set("autoplay", "true")
+	}
+	if loop {
+		v.Set("loop", "true")
+	}
+	return beatLeaderViewerURL + "/?" + v.Encode()
+}
+
+// bsorReplayPath is a row's replay under the .bsor name the BeatLeader viewer
+// accepts (same bytes as ReplayPath: /r/…/{id}.bsor).
+func bsorReplayPath(ctx context.Context, s *model.Score) string {
+	if reg := Platforms(ctx); reg != nil {
+		if p, ok := reg.Get(s.Platform); ok {
+			return strings.TrimSuffix(reg.ReplayPath(playRef(s)), p.ReplayExt) + ".bsor"
+		}
+	}
+	return ""
 }

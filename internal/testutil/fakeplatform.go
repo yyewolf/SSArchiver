@@ -29,6 +29,7 @@ type FakePlatform struct {
 	Calls       []string                   // "kind:account:page"
 	Limiter     *FakeLimiter
 	PBOnly      bool // registry PBOnly; set before calling Platform()
+	BSOR        bool // registry BSOR (default true); set before calling Platform()
 	Refused     int  // reported as PlayPage.Refused on every page
 
 	Access      map[string]string // kind/account → what ProbeAccess reports (default public)
@@ -46,7 +47,7 @@ func NewFakePlatform() *FakePlatform { return NewFakePlatformAs("testplat", "tp"
 // and display name; its profile URLs are https://{slug}.example/u/{id}.
 func NewFakePlatformAs(name, slug, displayName string) *FakePlatform {
 	return &FakePlatform{
-		Name: name, Slug: slug, DisplayName: displayName,
+		Name: name, Slug: slug, DisplayName: displayName, BSOR: true,
 		urlRe:   regexp.MustCompile(`^https://` + slug + `\.example/u/([a-z0-9]{1,16})$`),
 		PerPage: 2,
 		Profiles: map[string]platform.Profile{
@@ -68,7 +69,7 @@ var tpIDRe = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
 // Platform is the registry entry.
 func (f *FakePlatform) Platform() platform.Platform {
 	return platform.Platform{
-		Name: f.Name, Slug: f.Slug, DisplayName: f.DisplayName, Priority: 50, ReplayExt: ".tpr", PBOnly: f.PBOnly,
+		Name: f.Name, Slug: f.Slug, DisplayName: f.DisplayName, Priority: 50, BSOR: f.BSOR, ReplayExt: ".tpr", PBOnly: f.PBOnly,
 		ImageHosts: []string{"https://img." + f.Slug + ".example"},
 		ProfileURL: func(id string) string { return "https://" + f.Slug + ".example/u/" + id },
 		ParseURL: func(in string) (string, bool) {

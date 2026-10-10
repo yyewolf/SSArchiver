@@ -220,8 +220,8 @@ func TestScorePageArchived(t *testing.T) {
 		t.Fatalf("code = %d", rec.Code)
 	}
 	contains(t, rec.Body.String(),
-		"Hell of a time", `src="/embed/1"`, `href="/r/1.dat"`, "Download .dat",
-		"replays.example.com/embed/1", `data-copy="#embed-code"`, "sha256",
+		"Hell of a time", `src="/embed/1?viewer=beatleader"`, `href="/r/1.dat"`, "Download .dat",
+		"replays.example.com/embed/1?viewer=beatleader", `data-copy="#embed-code"`, "sha256",
 		`property="og:image" content="https://cdn.scoresaber.com/covers/x.png"`, "Ranked")
 }
 

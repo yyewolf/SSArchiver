@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/alert"
 	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
 	"github.com/yyewolf/ssarchiver/internal/web/components/button"
@@ -15,12 +16,14 @@ import (
 )
 
 type ScoreView struct {
-	Score           *model.Score
-	ViewerAvailable bool
-	ReplayURL       string
-	EmbedURL        string
-	EmbedCode       string
-	Now             time.Time
+	Score        *model.Score
+	Viewer       string // resolved replay viewer ("" when none can play the row)
+	ArcAvailable bool   // the bundled ArcViewer can be offered
+	ReplayURL    string
+	EmbedURL     string // absolute, with the viewer query
+	EmbedPathURL string // relative, with the viewer query
+	EmbedCode    string
+	Now          time.Time
 }
 
 templ ScorePage(p Page, v ScoreView) {
@@ -81,11 +84,14 @@ templ ScorePage(p Page, v ScoreView) {
 templ replaySection(v ScoreView) {
 	switch v.Score.ReplayState {
 		case model.ReplayArchived:
-			if v.ViewerAvailable && ViewerPlays(v.Score) {
+			if v.Viewer != "" {
+				if v.ArcAvailable && BeatLeaderPlays(ctx, v.Score) {
+					@viewerSwitcher(v)
+				}
 				<div class="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-					<iframe src={ EmbedPath(ctx, v.Score) } title="Replay viewer" class="size-full border-0" allow="fullscreen; autoplay" allowfullscreen loading="lazy"></iframe>
+					<iframe src={ v.EmbedPathURL } title="Replay viewer" class="size-full border-0" allow="fullscreen; autoplay" allowfullscreen loading="lazy"></iframe>
 				</div>
-			} else if v.ViewerAvailable {
+			} else if !ViewerPlays(v.Score) {
 				@stateAlert("Viewer unavailable", "The 3D viewer cannot play runs that ended early. You can still download the replay.", false)
 			} else {
 				@stateAlert("Viewer unavailable", "The 3D viewer is not bundled with this build. You can still download the replay.", false)
@@ -95,14 +101,14 @@ templ replaySection(v ScoreView) {
 					@icon.Download()
 					{ "Download " + ReplayExt(ctx, v.Score) }
 				}
-				if v.ViewerAvailable && ViewerPlays(v.Score) {
-					@button.Button(button.Props{Variant: button.VariantOutline, Href: EmbedPath(ctx, v.Score), Target: "_blank"}) {
+				if v.Viewer != "" {
+					@button.Button(button.Props{Variant: button.VariantOutline, Href: v.EmbedPathURL, Target: "_blank"}) {
 						@icon.Play()
 						Open viewer
 					}
 				}
 			</div>
-			if v.ViewerAvailable && ViewerPlays(v.Score) {
+			if v.Viewer != "" {
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "embed-code"}) {
 						Embed on your site
@@ -114,8 +120,14 @@ templ replaySection(v ScoreView) {
 							<span data-copy-label>Copy embed code</span>
 						}
 					</div>
-					@field.Description() {
-						Append ?autoplay=1, ?loop=1 or ?ui=0 to the iframe URL to change how it starts.
+					if v.Viewer == service.ViewerArcViewer {
+						@field.Description() {
+							Append ?autoplay=1, ?loop=1 or ?ui=0 to the iframe URL to change how it starts.
+						}
+					} else {
+						@field.Description() {
+							Append ?autoplay=1 or ?loop=1 to the iframe URL to change how it starts.
+						}
 					}
 				}
 			}
@@ -144,6 +156,26 @@ templ stateAlert(title, desc string, destructive bool) {
 		@alert.Description() {
 			{ desc }
 		}
+	}
+}
+
+// viewerSwitcher is the score page's replay-viewer choice; each option
+// remembers itself in the visitor's ssa_viewer cookie.
+templ viewerSwitcher(v ScoreView) {
+	<div class="flex items-center gap-3 text-sm">
+		<span class="text-muted-foreground">Viewer</span>
+		<div class="flex gap-3">
+			@viewerSwitch(v, service.ViewerBeatLeader, "BeatLeader")
+			@viewerSwitch(v, service.ViewerArcViewer, "ArcViewer")
+		</div>
+	</div>
+}
+
+templ viewerSwitch(v ScoreView, viewer, label string) {
+	if v.Viewer == viewer {
+		<span class="font-medium underline underline-offset-4">{ label }</span>
+	} else {
+		<a href={ templ.URL("?viewer=" + viewer) } class="text-muted-foreground hover:text-foreground">{ label }</a>
 	}
 }
 

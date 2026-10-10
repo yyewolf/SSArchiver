@@ -38,7 +38,7 @@ func TestAttemptPage(t *testing.T) {
 		t.Fatalf("attempt page = %d", page.Code)
 	}
 	contains(t, body, "Failed", "Ended at", "0:59", "Download .tpr", "Failed attempt by Tess")
-	if hasViewer := strings.Contains(body, `src="/embed/tp/attempt/a2"`); hasViewer != views.AttemptViewer {
+	if hasViewer := strings.Contains(body, `src="/embed/tp/attempt/a2?viewer=beatleader"`); hasViewer != views.AttemptViewer {
 		t.Fatalf("viewer shown = %v, AttemptViewer = %v", hasViewer, views.AttemptViewer)
 	}
 	embed := e.do(http.MethodGet, "/embed/tp/attempt/a2", nil).Code

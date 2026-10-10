@@ -82,6 +82,25 @@ func TestViewerSrcHeadsetOverride(t *testing.T) {
 	}
 }
 
+func TestBeatLeaderSrc(t *testing.T) {
+	ctx := testCtx(t)
+	if !BeatLeaderPlays(ctx, ssRow("42")) || !BeatLeaderPlays(ctx, tpRow(model.KindScore, "t1")) {
+		t.Fatal("open-replay platforms must offer the BeatLeader viewer")
+	}
+	if got := BeatLeaderSrc(ctx, "https://r.example.com", ssRow("42"), false, false); got != "https://replay.beatleader.com/?link=https%3A%2F%2Fr.example.com%2Fr%2F42.bsor" {
+		t.Errorf("BeatLeaderSrc(ss) = %s", got)
+	}
+	if got := BeatLeaderSrc(ctx, "https://r.example.com", tpRow(model.KindScore, "t1"), true, true); got != "https://replay.beatleader.com/?autoplay=true&link=https%3A%2F%2Fr.example.com%2Fr%2Ftp%2Ft1.bsor&loop=true" {
+		t.Errorf("BeatLeaderSrc(tp) = %s", got)
+	}
+	if got := BeatLeaderSrc(ctx, "https://r.example.com", tpRow(model.KindAttempt, "a1"), false, false); got != "https://replay.beatleader.com/?link=https%3A%2F%2Fr.example.com%2Fr%2Ftp%2Fattempt%2Fa1.bsor" {
+		t.Errorf("BeatLeaderSrc(attempt) = %s", got)
+	}
+	if got := BeatLeaderSrc(context.Background(), "https://r.example.com", ssRow("42"), false, false); got != "https://replay.beatleader.com/?link=https%3A%2F%2Fr.example.com" {
+		t.Errorf("BeatLeaderSrc(no registry) = %s", got)
+	}
+}
+
 func TestRowLinks(t *testing.T) {
 	ctx := testCtx(t)
 	for got, want := range map[string]string{

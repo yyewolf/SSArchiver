@@ -19,14 +19,15 @@ func TestPlatformRoutes(t *testing.T) {
 	if page.Code != 200 {
 		t.Fatalf("score page = %d", page.Code)
 	}
-	contains(t, page.Body.String(), "Song lb-a", `src="/embed/tp/t1"`, `href="/r/tp/t1.tpr"`, "Download .tpr",
-		"replays.example.com/embed/tp/t1", `property="og:url" content="https://replays.example.com/s/tp/t1"`)
+	contains(t, page.Body.String(), "Song lb-a", `src="/embed/tp/t1?viewer=beatleader"`, `href="/embed/tp/t1?viewer=beatleader"`,
+		`href="/r/tp/t1.tpr"`, "Download .tpr",
+		"replays.example.com/embed/tp/t1?viewer=beatleader", `property="og:url" content="https://replays.example.com/s/tp/t1"`)
 	contains(t, e.do(http.MethodGet, "/s/tp/t2", nil).Body.String(), "queued for archiving")
 	attempt := e.do(http.MethodGet, "/s/tp/attempt/a1", nil)
 	if attempt.Code != 200 {
 		t.Fatalf("attempt page = %d", attempt.Code)
 	}
-	contains(t, attempt.Body.String(), `src="/embed/tp/attempt/a1"`, `href="/r/tp/attempt/a1.tpr"`)
+	contains(t, attempt.Body.String(), `src="/embed/tp/attempt/a1?viewer=beatleader"`, `href="/r/tp/attempt/a1.tpr"`)
 
 	raw := e.do(http.MethodGet, "/r/tp/t1.tpr", nil)
 	h := raw.Header()
@@ -49,7 +50,9 @@ func TestPlatformRoutes(t *testing.T) {
 	if embed.Code != 200 || embed.Header().Get("Content-Security-Policy") != httpx.EmbedCSP {
 		t.Fatalf("embed = %d %q", embed.Code, embed.Header().Get("Content-Security-Policy"))
 	}
-	contains(t, embed.Body.String(), "replayURL=https%3A%2F%2Freplays.example.com%2Fr%2Ftp%2Ft1.tpr")
+	contains(t, embed.Body.String(), "link=https%3A%2F%2Freplays.example.com%2Fr%2Ftp%2Ft1.bsor")
+	contains(t, e.do(http.MethodGet, "/embed/tp/t1?viewer=arcviewer", nil).Body.String(),
+		"replayURL=https%3A%2F%2Freplays.example.com%2Fr%2Ftp%2Ft1.tpr")
 
 	for _, p := range []string{
 		"/s/zz/t1", "/s/tp/nope", "/s/tp/attempt/t1", "/r/zz/t1.tpr", "/r/tp/t1.dat", "/r/tp/t2.tpr", "/r/tp/.tpr",

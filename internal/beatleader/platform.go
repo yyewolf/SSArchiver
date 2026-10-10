@@ -53,7 +53,7 @@ var attemptsHint = &platform.Hint{
 // (tests) mean no client-side rate limiting.
 func NewPlatform(api API, apiL, cdnL *Limiter) platform.Platform {
 	return platform.Platform{
-		Name: Name, Slug: "bl", DisplayName: "BeatLeader", Priority: 10, PBOnly: true, ReplayExt: ".bsor",
+		Name: Name, Slug: "bl", DisplayName: "BeatLeader", Priority: 10, PBOnly: true, BSOR: true, ReplayExt: ".bsor",
 		ImageHosts: []string{
 			"https://cdn.assets.beatleader.xyz", "https://cdn.beatsaver.com", "https://*.cdn.beatsaver.com",
 			"https://avatars.akamai.steamstatic.com", "https://avatars.steamstatic.com",

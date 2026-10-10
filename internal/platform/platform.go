@@ -110,6 +110,7 @@ type Platform struct {
 	Priority    int  // lower wins for the player's display identity
 	Legacy      bool // ScoreSaber only: bare IDs, legacy routes and storage layout
 	PBOnly      bool // the score feed lists current personal bests only: older rows lose personal_best (spec §4.6)
+	BSOR        bool // replay files are the open-replay (BSOR) format: the BeatLeader viewer can load them from a .bsor link
 	ReplayExt   string
 	ImageHosts  []string
 	ProfileURL  func(externalID string) string

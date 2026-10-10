@@ -3,8 +3,10 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/model"
@@ -17,10 +19,13 @@ func setCORS(h http.Header) {
 	h.Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Content-Disposition, ETag")
 }
 
-// replayFile serves the legacy /r/{id}.dat.
+// replayFile serves the legacy /r/{id}.dat (and its .bsor alias).
 func (h *Handler) replayFile(w http.ResponseWriter, r *http.Request) {
 	setCORS(w.Header())
 	idStr, ok := strings.CutSuffix(r.PathValue("file"), ".dat")
+	if !ok {
+		idStr, ok = strings.CutSuffix(r.PathValue("file"), ".bsor")
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -30,6 +35,8 @@ func (h *Handler) replayFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // platformReplay serves /r/{slug}/{externalID}{ext} and /r/{slug}/attempt/….
+// Open-replay platforms (BSOR) also answer their replay under a .bsor name:
+// BeatLeader's viewer only loads replay links ending in .bsor.
 func (h *Handler) platformReplay(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		setCORS(w.Header())
@@ -38,7 +45,11 @@ func (h *Handler) platformReplay(kind string) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		id, ok := strings.CutSuffix(r.PathValue("file"), p.ReplayExt)
+		file := r.PathValue("file")
+		id, ok := strings.CutSuffix(file, p.ReplayExt)
+		if !ok && p.BSOR {
+			id, ok = strings.CutSuffix(file, ".bsor")
+		}
 		if !ok || id == "" {
 			http.NotFound(w, r)
 			return
@@ -101,18 +112,77 @@ func (h *Handler) platformEmbed(kind string) http.HandlerFunc {
 	}
 }
 
-// embedPage is the iframe-able wrapper around the same-origin viewer.
+// viewerCookie stores a visitor's replay-viewer choice for a year.
+const viewerCookie = "ssa_viewer"
+
+func (h *Handler) setViewerCookie(w http.ResponseWriter, r *http.Request, viewer string) {
+	c := &http.Cookie{
+		Name: viewerCookie, Value: viewer, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		MaxAge: int((365 * 24 * time.Hour).Seconds()),
+	}
+	if httpx.IsHTTPS(r, h.cfg.BaseURL, h.cfg.TrustProxy) {
+		c.Secure = true
+	}
+	http.SetCookie(w, c)
+}
+
+// pickViewer resolves a preferred viewer to one that can play the row:
+// ArcViewer needs the bundled build, the BeatLeader viewer an open-replay
+// platform; "" when neither can.
+func pickViewer(v string, arcOK, blOK bool) string {
+	switch v {
+	case service.ViewerArcViewer:
+		if arcOK {
+			return service.ViewerArcViewer
+		}
+		if blOK {
+			return service.ViewerBeatLeader
+		}
+	case service.ViewerBeatLeader:
+		if blOK {
+			return service.ViewerBeatLeader
+		}
+		if arcOK {
+			return service.ViewerArcViewer
+		}
+	}
+	return ""
+}
+
+// embedViewer resolves the embed page's viewer: an explicit ?viewer= beats the
+// instance default (embeds stay stateless; the score page carries the visitor
+// choice in its iframe URL).
+func (h *Handler) embedViewer(q url.Values, st service.Settings, arcOK, blOK bool) string {
+	if v := pickViewer(q.Get("viewer"), arcOK, blOK); v != "" {
+		return v
+	}
+	return pickViewer(st.ReplayViewer, arcOK, blOK)
+}
+
+// embedPage is the iframe-able wrapper around the replay viewers.
 func (h *Handler) embedPage(w http.ResponseWriter, r *http.Request, sc *model.Score, err error) {
 	w.Header().Set("Content-Security-Policy", httpx.EmbedCSP)
-	if err != nil || !h.viewer.Available() || sc.ReplayState != model.ReplayArchived || !views.ViewerPlays(sc) {
+	if err != nil || sc.ReplayState != model.ReplayArchived || !views.ViewerPlays(sc) {
 		render(w, r, http.StatusNotFound, views.EmbedUnavailable())
 		return
 	}
 	q := r.URL.Query()
-	st, serr := h.svc.Settings(r.Context())
+	ctx := r.Context()
+	st, serr := h.svc.Settings(ctx)
 	if serr != nil {
 		st = service.DefaultSettings
 	}
-	src := views.ViewerSrc(r.Context(), httpx.BaseURLFrom(r.Context()), sc, q.Get("autoplay") == "1", q.Get("loop") == "1", q.Get("ui") == "0", st)
+	arcOK, blOK := h.viewer.Available(), views.BeatLeaderPlays(ctx, sc)
+	viewer := h.embedViewer(q, st, arcOK, blOK)
+	if viewer == "" {
+		render(w, r, http.StatusNotFound, views.EmbedUnavailable())
+		return
+	}
+	var src string
+	if viewer == service.ViewerBeatLeader {
+		src = views.BeatLeaderSrc(ctx, httpx.BaseURLFrom(ctx), sc, q.Get("autoplay") == "1", q.Get("loop") == "1")
+	} else {
+		src = views.ViewerSrc(ctx, httpx.BaseURLFrom(ctx), sc, q.Get("autoplay") == "1", q.Get("loop") == "1", q.Get("ui") == "0", st)
+	}
 	render(w, r, http.StatusOK, views.Embed(views.SongTitle(sc)+" · "+views.PlayerName(sc), src))
 }

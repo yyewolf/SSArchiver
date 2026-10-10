@@ -49,27 +49,29 @@ func TestViewerSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.ViewerShowHeadset || st.ViewerHeadsetColor != "#878787" || st.ViewerHeadsetAlpha != 1 {
+	if st.ViewerShowHeadset || st.ViewerHeadsetColor != "#878787" || st.ViewerHeadsetAlpha != 1 || st.ReplayViewer != service.ViewerBeatLeader {
 		t.Fatalf("viewer defaults = %+v", st)
 	}
 	st.ViewerShowHeadset = true
 	st.ViewerHeadsetColor = "#Ff0080"
 	st.ViewerHeadsetAlpha = 0.5
+	st.ReplayViewer = service.ViewerArcViewer
 	if err := svc.UpdateViewerSettings(ctx, st); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := svc.Settings(ctx)
-	if !got.ViewerShowHeadset || got.ViewerHeadsetColor != "#ff0080" || got.ViewerHeadsetAlpha != 0.5 {
+	if !got.ViewerShowHeadset || got.ViewerHeadsetColor != "#ff0080" || got.ViewerHeadsetAlpha != 0.5 || got.ReplayViewer != service.ViewerArcViewer {
 		t.Fatalf("round trip = %+v", got)
 	}
 	if err := svc.UpdateSettings(ctx, service.Settings{InstanceTitle: "My Replays", PollInterval: 15 * time.Minute}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = svc.Settings(ctx)
-	if got.InstanceTitle != "My Replays" || !got.ViewerShowHeadset {
+	if got.InstanceTitle != "My Replays" || !got.ViewerShowHeadset || got.ReplayViewer != service.ViewerArcViewer {
 		t.Fatalf("general update must not touch viewer settings: %+v", got)
 	}
 	for _, bad := range []service.Settings{
+		{ReplayViewer: "arc"},
 		{ViewerHeadsetColor: "ff0080"},
 		{ViewerHeadsetColor: "#ff008", ViewerHeadsetAlpha: 1},
 		{ViewerHeadsetColor: "#ff0080", ViewerHeadsetAlpha: 1.5},

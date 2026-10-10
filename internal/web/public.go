@@ -187,9 +187,33 @@ func (h *Handler) scorePage(w http.ResponseWriter, r *http.Request, sc *model.Sc
 	}
 	ctx := r.Context()
 	base := httpx.BaseURLFrom(ctx)
+	st, serr := h.svc.Settings(ctx)
+	if serr != nil {
+		st = service.DefaultSettings
+	}
+	arcOK, blOK := h.viewer.Available(), views.BeatLeaderPlays(ctx, sc)
+	// ?viewer= remembers the choice in the visitor's cookie; otherwise the
+	// cookie, then the instance default, applies.
+	viewer := ""
+	if choice := r.URL.Query().Get("viewer"); choice == service.ViewerBeatLeader || choice == service.ViewerArcViewer {
+		h.setViewerCookie(w, r, choice)
+		viewer = pickViewer(choice, arcOK, blOK)
+	}
+	if viewer == "" {
+		if c, cerr := r.Cookie(viewerCookie); cerr == nil {
+			viewer = pickViewer(c.Value, arcOK, blOK)
+		}
+	}
+	if viewer == "" {
+		viewer = pickViewer(st.ReplayViewer, arcOK, blOK)
+	}
+	embedPath := views.EmbedPath(ctx, sc)
+	if viewer != "" {
+		embedPath += "?viewer=" + viewer
+	}
 	v := views.ScoreView{
-		Score: sc, ViewerAvailable: h.viewer.Available(), Now: h.svc.Now(),
-		ReplayURL: base + views.ReplayPath(ctx, sc), EmbedURL: base + views.EmbedPath(ctx, sc),
+		Score: sc, Viewer: viewer, ArcAvailable: arcOK, Now: h.svc.Now(),
+		ReplayURL: base + views.ReplayPath(ctx, sc), EmbedURL: base + embedPath, EmbedPathURL: embedPath,
 	}
 	v.EmbedCode = views.EmbedSnippet(v.EmbedURL)
 	title := fmt.Sprintf("%s by %s", views.SongTitle(sc), views.PlayerName(sc))

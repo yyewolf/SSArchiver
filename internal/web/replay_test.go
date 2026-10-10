@@ -76,7 +76,7 @@ func TestEmbedViewerSettings(t *testing.T) {
 	if err := e.svc.UpdateViewerSettings(ctx, st); err != nil {
 		t.Fatal(err)
 	}
-	rec := e.do(http.MethodGet, "/embed/1", nil)
+	rec := e.do(http.MethodGet, "/embed/1?viewer=arcviewer", nil)
 	if rec.Code != 200 {
 		t.Fatalf("embed = %d", rec.Code)
 	}
@@ -84,7 +84,7 @@ func TestEmbedViewerSettings(t *testing.T) {
 	if err := e.svc.UpdateViewerSettings(ctx, service.DefaultSettings); err != nil {
 		t.Fatal(err)
 	}
-	if plain := e.do(http.MethodGet, "/embed/1", nil).Body.String(); strings.Contains(plain, "settingsOverride") {
+	if plain := e.do(http.MethodGet, "/embed/1?viewer=arcviewer", nil).Body.String(); strings.Contains(plain, "settingsOverride") {
 		t.Fatal("settingsOverride must be absent when headset rendering is disabled")
 	}
 }
@@ -93,13 +93,15 @@ func TestEmbed(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
 	e.seed()
-	rec := e.do(http.MethodGet, "/embed/1?autoplay=1&loop=1&ui=0", nil)
+	rec := e.do(http.MethodGet, "/embed/1", nil)
 	if rec.Code != 200 || rec.Header().Get("Content-Security-Policy") != httpx.EmbedCSP {
 		t.Fatalf("code=%d csp=%q", rec.Code, rec.Header().Get("Content-Security-Policy"))
 	}
-	contains(t, rec.Body.String(), "/viewer/?autoPlay=true", "loop=true", "noProxy=true",
+	contains(t, rec.Body.String(), "link=https%3A%2F%2Freplays.example.com%2Fr%2F1.bsor")
+	arc := e.do(http.MethodGet, "/embed/1?viewer=arcviewer&autoplay=1&loop=1&ui=0", nil)
+	contains(t, arc.Body.String(), "/viewer/?autoPlay=true", "loop=true", "noProxy=true",
 		"replayURL=https%3A%2F%2Freplays.example.com%2Fr%2F1.dat", "uiOff=true")
-	plain := e.do(http.MethodGet, "/embed/1", nil).Body.String()
+	plain := e.do(http.MethodGet, "/embed/1?viewer=arcviewer", nil).Body.String()
 	if strings.Contains(plain, "autoPlay") || strings.Contains(plain, "uiOff") {
 		t.Fatal("options must be off by default")
 	}

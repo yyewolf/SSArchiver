@@ -37,7 +37,7 @@ func TestPlatformDescriptor(t *testing.T) {
 	if _, err := platform.NewRegistry(p); err != nil {
 		t.Fatalf("descriptor must validate: %v", err)
 	}
-	if p.Name != model.PlatformScoreSaber || p.Slug != "ss" || !p.Legacy || p.ReplayExt != ".dat" || p.ProfileURL("42") != "https://scoresaber.com/u/42" {
+	if p.Name != model.PlatformScoreSaber || p.Slug != "ss" || !p.Legacy || p.ReplayExt != ".dat" || !p.BSOR || p.ProfileURL("42") != "https://scoresaber.com/u/42" {
 		t.Fatalf("descriptor = %+v", p)
 	}
 }
