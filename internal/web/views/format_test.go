@@ -27,9 +27,6 @@ func TestFormat(t *testing.T) {
 		Initials("oermer"):                      "O",
 		Initials("Ghost Rule Fan"):              "GR",
 		Initials(""):                            "?",
-		ScoreURL(42):                            "/s/42",
-		ReplayPath(42):                          "/r/42.dat",
-		EmbedPath(42):                           "/embed/42",
 	}
 	for got, want := range checks {
 		if got != want {

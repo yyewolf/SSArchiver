@@ -14,7 +14,7 @@ import (
 
 func TestSecurityHeadersNonce(t *testing.T) {
 	var nonce string
-	h := httpx.SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := httpx.SecurityHeaders("https://cdn.scoresaber.com")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nonce = templ.GetNonce(r.Context())
 	}))
 	rec := httptest.NewRecorder()
@@ -22,6 +22,9 @@ func TestSecurityHeadersNonce(t *testing.T) {
 	csp := rec.Header().Get("Content-Security-Policy")
 	if nonce == "" || !strings.Contains(csp, "'nonce-"+nonce+"'") || !strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Fatalf("nonce=%q csp=%q", nonce, csp)
+	}
+	if !strings.Contains(csp, "img-src 'self' data: https://cdn.scoresaber.com;") {
+		t.Fatalf("img-src must list the given hosts: %q", csp)
 	}
 	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Referrer-Policy") == "" {
 		t.Fatalf("headers = %v", rec.Header())
@@ -34,7 +37,7 @@ func TestSecurityHeadersNonce(t *testing.T) {
 }
 
 func TestDocsCSP(t *testing.T) {
-	h := httpx.SecurityHeaders(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := httpx.SecurityHeaders("https://cdn.scoresaber.com")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/docs", nil))
 	if rec.Header().Get("Content-Security-Policy") != httpx.DocsCSP {

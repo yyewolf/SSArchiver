@@ -494,9 +494,9 @@ templ FailedTable(fv FailedView) {
 						for _, s := range fv.Items {
 							@table.Row() {
 								@table.Cell() {
-									<a href={ templ.SafeURL(ScoreURL(s.ID)) } class="underline-offset-4 hover:underline">
+									<a href={ templ.SafeURL(ScoreURL(ctx, s)) } class="underline-offset-4 hover:underline">
 										<span class="block font-medium">{ SongTitle(s) }</span>
-										<span class="block text-xs text-muted-foreground">{ PlayerName(s) } · #{ strconv.FormatInt(s.ID, 10) }</span>
+										<span class="block text-xs text-muted-foreground">{ PlayerName(s) } · { PlatformName(ctx, s.Platform) } #{ s.ExternalID }</span>
 									</a>
 								}
 								@table.Cell(table.CellProps{Class: "hidden max-w-sm whitespace-normal break-words text-xs text-muted-foreground md:table-cell"}) {

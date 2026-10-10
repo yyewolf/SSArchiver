@@ -15,6 +15,7 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/config"
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
@@ -33,18 +34,26 @@ type testEnv struct {
 	svc    *service.Service
 	clk    *testutil.Clock
 	status *statusStub
+	fp     *testutil.FakePlatform // nil unless built with newEnvWith
 	h      http.Handler
 }
 
-func newEnv(t *testing.T) *testEnv {
+func newEnv(t *testing.T) *testEnv { return newEnvWith(t, nil) }
+
+// newEnvWith also registers the fake third platform when fp is not nil.
+func newEnvWith(t *testing.T, fp *testutil.FakePlatform) *testEnv {
 	t.Helper()
-	svc, _, clk := testutil.NewService(t)
+	plats := []platform.Platform{scoresaber.NewPlatform(&testutil.Resolver{Players: testutil.DefaultPlayers()}, nil)}
+	if fp != nil {
+		plats = append(plats, fp.Platform())
+	}
+	svc, _, clk := testutil.NewServiceWith(t, plats...)
 	vh := viewer.NewHandler(fstest.MapFS{"index.html.gz": {Data: testutil.Gzip("<html>viewer</html>")}}, "test")
 	st := &statusStub{st: archiver.Status{State: archiver.StateIdle, Since: testutil.T0}}
 	h := web.New(web.Deps{Service: svc, Status: st, Viewer: vh, Config: config.Config{HourlyBudget: 300, BaseURL: "https://replays.example.com"}})
 	mux := http.NewServeMux()
 	h.Routes(mux)
-	return &testEnv{t: t, svc: svc, clk: clk, status: st, h: h.Middleware(mux)}
+	return &testEnv{t: t, svc: svc, clk: clk, status: st, fp: fp, h: h.Middleware(mux)}
 }
 
 type reqOpt func(*http.Request)
@@ -127,6 +136,20 @@ func (e *testEnv) seed() string {
 		e.t.Fatal(err)
 	}
 	return p.ID
+}
+
+// seedTP tracks Tess (testplat account abc): score t1 archived, score t2
+// pending, attempt a1 archived. It returns her player ID.
+func (e *testEnv) seedTP() string {
+	e.t.Helper()
+	tess := testutil.AddPlayer(e.t, e.svc, "https://tp.example/u/abc")
+	testutil.UpsertFake(e.t, e.svc, tess,
+		testutil.FakePlay(model.KindScore, "t1", "lb-a", testutil.T0.Add(2*time.Minute), true),
+		testutil.FakePlay(model.KindScore, "t2", "lb-b", testutil.T0.Add(time.Minute), true),
+		testutil.FakePlay(model.KindAttempt, "a1", "lb-a", testutil.T0, true))
+	testutil.Archive(e.t, e.svc, testutil.Row(e.t, e.svc, tess, "t1"), "TP replay bytes")
+	testutil.Archive(e.t, e.svc, testutil.Row(e.t, e.svc, tess, "a1"), "TP attempt bytes")
+	return tess
 }
 
 func (e *testEnv) playerID(account string) string {

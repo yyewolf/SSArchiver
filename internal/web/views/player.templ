@@ -186,7 +186,7 @@ templ ScoreTable(v PlayerView) {
 templ scoreRow(s *model.Score, now time.Time) {
 	@table.Row() {
 		@table.Cell() {
-			<a href={ templ.SafeURL(ScoreURL(s.ID)) } class="flex items-center gap-3 underline-offset-4 hover:underline">
+			<a href={ templ.SafeURL(ScoreURL(ctx, s)) } class="flex items-center gap-3 underline-offset-4 hover:underline">
 				if cover := CoverURL(s); cover != "" {
 					<img src={ cover } alt="" loading="lazy" class="size-10 shrink-0 rounded-md border object-cover"/>
 				}

@@ -28,10 +28,15 @@ const (
 		"img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'"
 )
 
-// DefaultCSP is the policy for every UI page.
-func DefaultCSP(nonce string) string {
+// DefaultCSP is the policy for every UI page. imgHosts are the platforms'
+// image hosts (avatars, covers), from the registry.
+func DefaultCSP(nonce string, imgHosts []string) string {
+	img := "'self' data:"
+	if len(imgHosts) > 0 {
+		img += " " + strings.Join(imgHosts, " ")
+	}
 	return "default-src 'self'; script-src 'self' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; " +
-		"img-src 'self' data: https://cdn.scoresaber.com; frame-src 'self'; connect-src 'self'; " +
+		"img-src " + img + "; frame-src 'self'; connect-src 'self'; " +
 		"base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 }
 
@@ -62,21 +67,23 @@ func BaseURLFrom(ctx context.Context) string {
 
 // SecurityHeaders sets baseline headers and a per-request CSP nonce, which
 // templ components read via templ.GetNonce. Handlers may override the CSP.
-func SecurityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw := make([]byte, 16)
-		_, _ = rand.Read(raw)
-		nonce := base64.RawStdEncoding.EncodeToString(raw)
-		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		if strings.HasPrefix(r.URL.Path, "/api/docs") {
-			h.Set("Content-Security-Policy", DocsCSP)
-		} else {
-			h.Set("Content-Security-Policy", DefaultCSP(nonce))
-		}
-		next.ServeHTTP(w, r.WithContext(templ.WithNonce(r.Context(), nonce)))
-	})
+func SecurityHeaders(imgHosts ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw := make([]byte, 16)
+			_, _ = rand.Read(raw)
+			nonce := base64.RawStdEncoding.EncodeToString(raw)
+			h := w.Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			if strings.HasPrefix(r.URL.Path, "/api/docs") {
+				h.Set("Content-Security-Policy", DocsCSP)
+			} else {
+				h.Set("Content-Security-Policy", DefaultCSP(nonce, imgHosts))
+			}
+			next.ServeHTTP(w, r.WithContext(templ.WithNonce(r.Context(), nonce)))
+		})
+	}
 }
 
 // BaseURL stores the public base URL in the request context.

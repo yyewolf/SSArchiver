@@ -108,7 +108,3 @@ func Initials(name string) string {
 	}
 	return string(out)
 }
-
-func ScoreURL(id int64) string   { return "/s/" + strconv.FormatInt(id, 10) }
-func ReplayPath(id int64) string { return "/r/" + strconv.FormatInt(id, 10) + ".dat" }
-func EmbedPath(id int64) string  { return "/embed/" + strconv.FormatInt(id, 10) }

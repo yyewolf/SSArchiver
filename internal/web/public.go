@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
 )
@@ -78,14 +79,21 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, views.PlayerPage(p, v))
 }
 
+// score serves the legacy /s/{id} (ScoreSaber scores).
 func (h *Handler) score(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, ok := parseID(r.PathValue("id"))
-	if !ok {
-		h.notFound(w, r, "No such score.")
-		return
+	sc, err := h.legacyPlay(r, r.PathValue("id"))
+	h.scorePage(w, r, sc, err)
+}
+
+// platformScore serves /s/{slug}/{externalID} and /s/{slug}/attempt/{externalID}.
+func (h *Handler) platformScore(kind string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sc, err := h.slugPlay(r, kind, r.PathValue("externalID"))
+		h.scorePage(w, r, sc, err)
 	}
-	sc, err := h.svc.GetScore(ctx, id)
+}
+
+func (h *Handler) scorePage(w http.ResponseWriter, r *http.Request, sc *model.Score, err error) {
 	if isNotFound(err) {
 		h.notFound(w, r, "No such score.")
 		return
@@ -94,14 +102,15 @@ func (h *Handler) score(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	ctx := r.Context()
 	base := httpx.BaseURLFrom(ctx)
 	v := views.ScoreView{
 		Score: sc, ViewerAvailable: h.viewer.Available(), Now: h.svc.Now(),
-		ReplayURL: base + views.ReplayPath(id), EmbedURL: base + views.EmbedPath(id),
+		ReplayURL: base + views.ReplayPath(ctx, sc), EmbedURL: base + views.EmbedPath(ctx, sc),
 	}
 	v.EmbedCode = views.EmbedSnippet(v.EmbedURL)
 	title := fmt.Sprintf("%s by %s", views.SongTitle(sc), views.PlayerName(sc))
 	p := h.page(r, title)
-	p.OG = &views.OpenGraph{Title: title, Description: views.ScoreSummary(sc), Image: views.CoverURL(sc), URL: base + views.ScoreURL(id)}
+	p.OG = &views.OpenGraph{Title: title, Description: views.ScoreSummary(sc), Image: views.CoverURL(sc), URL: base + views.ScoreURL(ctx, sc)}
 	render(w, r, http.StatusOK, views.ScorePage(p, v))
 }

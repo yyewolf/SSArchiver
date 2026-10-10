@@ -16,6 +16,7 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/buildinfo"
 	"github.com/yyewolf/ssarchiver/internal/config"
 	"github.com/yyewolf/ssarchiver/internal/httpx"
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/viewer"
 	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
@@ -61,9 +62,17 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /p/{id}", h.player)
 	mux.HandleFunc("GET /p/{slug}/{externalID}", h.accountLink)
 	mux.HandleFunc("GET /s/{id}", h.score)
+	mux.HandleFunc("GET /s/{slug}/{externalID}", h.platformScore(model.KindScore))
+	mux.HandleFunc("GET /s/{slug}/attempt/{externalID}", h.platformScore(model.KindAttempt))
 	mux.HandleFunc("GET /r/{file}", h.replayFile)
+	mux.HandleFunc("GET /r/{slug}/{file}", h.platformReplay(model.KindScore))
+	mux.HandleFunc("GET /r/{slug}/attempt/{file}", h.platformReplay(model.KindAttempt))
 	mux.HandleFunc("OPTIONS /r/{file}", h.replayPreflight)
+	mux.HandleFunc("OPTIONS /r/{slug}/{file}", h.replayPreflight)
+	mux.HandleFunc("OPTIONS /r/{slug}/attempt/{file}", h.replayPreflight)
 	mux.HandleFunc("GET /embed/{id}", h.embed)
+	mux.HandleFunc("GET /embed/{slug}/{externalID}", h.platformEmbed(model.KindScore))
+	mux.HandleFunc("GET /embed/{slug}/attempt/{externalID}", h.platformEmbed(model.KindAttempt))
 	mux.HandleFunc("GET /admin", h.requireAdmin(h.adminPlayers))
 	mux.HandleFunc("GET /admin/sync", h.requireAdmin(h.syncPage))
 	mux.HandleFunc("GET /admin/sync/live", h.requireAdmin(h.syncLive))
@@ -94,10 +103,18 @@ func (h *Handler) Middleware(next http.Handler) http.Handler {
 	hd := cop.Handler(next)
 	hd = h.requireSetup(hd)
 	hd = h.loadSession(hd)
+	hd = h.withPlatforms(hd)
 	hd = httpx.BaseURL(h.cfg.BaseURL, h.cfg.TrustProxy)(hd)
-	hd = httpx.SecurityHeaders(hd)
+	hd = httpx.SecurityHeaders(h.svc.Platforms().ImageHosts()...)(hd)
 	hd = httpx.Logging(hd)
 	return httpx.Recover(hd)
+}
+
+// withPlatforms gives every component the registry (views.ScoreURL & co).
+func (h *Handler) withPlatforms(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(views.WithPlatforms(r.Context(), h.svc.Platforms())))
+	})
 }
 
 func (h *Handler) loadSession(next http.Handler) http.Handler {
