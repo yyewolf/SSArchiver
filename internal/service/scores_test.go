@@ -33,7 +33,7 @@ func TestUpsertScoresPreservesArchiveState(t *testing.T) {
 	ctx := context.Background()
 	a := mustAdd(t, svc, "1001")
 	item := testutil.Item("1001", 1, 1001, testutil.T0, true)
-	if _, err := svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item}); err != nil {
+	if _, err := svc.UpsertPlays(ctx, a, model.PlatformScoreSaber, scoresaber.Plays([]scoresaber.ScoreItem{item})); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.MarkReplayArchived(ctx, 1, 1234, "deadbeef"); err != nil {
@@ -41,7 +41,7 @@ func TestUpsertScoresPreservesArchiveState(t *testing.T) {
 	}
 	item.Score.Rank = 7
 	item.Score.PersonalBest = false
-	res, err := svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item})
+	res, err := svc.UpsertPlays(ctx, a, model.PlatformScoreSaber, scoresaber.Plays([]scoresaber.ScoreItem{item}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +62,9 @@ func TestUpsertScoresReplayAppearsLater(t *testing.T) {
 	ctx := context.Background()
 	a := mustAdd(t, svc, "1001")
 	item := testutil.Item("1001", 1, 1001, testutil.T0, false)
-	_, _ = svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item})
+	_, _ = svc.UpsertPlays(ctx, a, model.PlatformScoreSaber, scoresaber.Plays([]scoresaber.ScoreItem{item}))
 	item.Score.HasReplay = true
-	res, _ := svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item})
+	res, _ := svc.UpsertPlays(ctx, a, model.PlatformScoreSaber, scoresaber.Plays([]scoresaber.ScoreItem{item}))
 	s, _ := svc.GetScore(ctx, 1)
 	if res.NewReplays != 1 || s.ReplayState != model.ReplayPending || !s.HasReplay {
 		t.Fatalf("res=%+v state=%s", res, s.ReplayState)
@@ -87,7 +87,7 @@ func TestListScoresFiltersAndPaging(t *testing.T) {
 		}
 		items = append(items, it)
 	}
-	if _, err := svc.UpsertScores(ctx, a, items); err != nil {
+	if _, err := svc.UpsertPlays(ctx, a, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		t.Fatal(err)
 	}
 	_ = svc.MarkReplayArchived(ctx, 5, 1, "x")

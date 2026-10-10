@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/platform"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 )
 
 const (
@@ -38,88 +38,49 @@ type ScoreList struct {
 	Pages   int
 }
 
-func leaderboardFrom(lb scoresaber.Leaderboard) *model.Leaderboard {
-	return &model.Leaderboard{
-		ID: lb.ID, SongHash: lb.Map.Hash, SongName: lb.Map.SongName, SongSubName: lb.Map.SongSubName,
-		SongAuthor: lb.Map.SongAuthorName, Mapper: lb.Map.LevelAuthorName,
-		Difficulty: lb.Difficulty.Difficulty, DifficultyRaw: lb.Difficulty.RawDifficulty, GameMode: lb.Difficulty.GameMode,
-		CoverURL: lb.Map.CoverURL, Status: lb.Realm.LeaderboardStatus, Stars: lb.Realm.Stars, MaxScore: lb.MaxScore,
-		Platform: model.PlatformScoreSaber, ExternalID: strconv.FormatInt(lb.ID, 10),
-		MapKey: platform.MapKey(lb.Map.Hash, lb.Difficulty.GameMode, lb.Difficulty.Difficulty),
-	}
-}
-
-func scoreFrom(playerID string, it scoresaber.ScoreItem) *model.Score {
-	sc := it.Score
-	state := model.ReplayNone
-	if sc.HasReplay {
-		state = model.ReplayPending
-	}
-	return &model.Score{
-		ID: sc.ID, PlayerID: playerID, LeaderboardID: it.Leaderboard.ID, Rank: sc.Rank,
-		ModifiedScore: sc.ModifiedScore, UnmodifiedScore: sc.UnmodifiedScore, Accuracy: sc.Accuracy, PP: sc.PP,
-		Mods: strings.Join(sc.Mods, ","), FullCombo: sc.FullCombo, MissedNotes: sc.MissedNotes, BadCuts: sc.BadCuts,
-		MaxCombo: sc.MaxCombo, HMD: sc.Device.HMD, PersonalBest: sc.PersonalBest, SetAt: sc.CreatedAt.UTC(),
-		HasReplay: sc.HasReplay, ReplayState: state,
-		Platform: model.PlatformScoreSaber, Kind: model.KindScore, EndType: model.EndClear, ExternalID: strconv.FormatInt(sc.ID, 10),
-	}
-}
-
-// UpsertScores stores a page of ScoreSaber scores. Existing scores only get
-// their mutable ranking fields refreshed; archive columns are never touched,
-// except none → pending when ScoreSaber newly offers a replay.
-func (s *Service) UpsertScores(ctx context.Context, playerID string, items []scoresaber.ScoreItem) (UpsertResult, error) {
+// UpsertPlays stores a page of plays from one platform (spec §5.4). Existing
+// rows only get their mutable ranking fields refreshed; archive columns are
+// never touched, except none → pending when the platform newly offers a replay.
+func (s *Service) UpsertPlays(ctx context.Context, playerID, platformName string, plays []platform.Play) (UpsertResult, error) {
 	var res UpsertResult
-	if len(items) == 0 {
+	if len(plays) == 0 {
 		return res, nil
 	}
+	p, ok := s.reg.Get(platformName)
+	if !ok {
+		return res, fmt.Errorf("service: upsert: unknown platform %q", platformName)
+	}
 	err := s.q.Transaction(func(tx *query.Query) error {
-		seen := map[int64]bool{}
-		var lbs []*model.Leaderboard
-		ids := make([]int64, 0, len(items))
-		for _, it := range items {
-			ids = append(ids, it.Score.ID)
-			if !seen[it.Leaderboard.ID] {
-				seen[it.Leaderboard.ID] = true
-				lbs = append(lbs, leaderboardFrom(it.Leaderboard))
-			}
-		}
-		if err := tx.Leaderboard.WithContext(ctx).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}}, UpdateAll: true,
-		}).CreateInBatches(lbs, 100); err != nil {
-			return fmt.Errorf("upsert leaderboards: %w", err)
-		}
-		existing, err := tx.Score.WithContext(ctx).Where(tx.Score.ID.In(ids...)).Find()
+		alloc := &idAllocator{ctx: ctx, tx: tx, legacy: p.Legacy}
+		lbIDs, err := upsertLeaderboards(ctx, tx, p.Name, plays, alloc)
 		if err != nil {
-			return fmt.Errorf("load existing scores: %w", err)
+			return err
 		}
-		byID := make(map[int64]*model.Score, len(existing))
-		for _, e := range existing {
-			byID[e.ID] = e
+		byKey, err := existingPlays(ctx, tx, p.Name, plays)
+		if err != nil {
+			return err
 		}
 		var fresh []*model.Score
-		for _, it := range items {
-			sc := it.Score
-			old, ok := byID[sc.ID]
-			if !ok {
-				row := scoreFrom(playerID, it)
-				if row.ReplayState == model.ReplayPending {
-					res.NewReplays++
+		for _, pl := range plays {
+			key := pl.Kind + "|" + pl.ExternalID
+			if old, ok := byKey[key]; ok {
+				res.Known++
+				if err := refreshPlay(ctx, tx, old, pl, &res); err != nil {
+					return err
 				}
-				res.New++
-				fresh = append(fresh, row)
-				byID[sc.ID] = row // guards against duplicates within one page
 				continue
 			}
-			res.Known++
-			upd := map[string]any{"rank": sc.Rank, "pp": sc.PP, "personal_best": sc.PersonalBest, "has_replay": sc.HasReplay || old.HasReplay}
-			if sc.HasReplay && old.ReplayState == model.ReplayNone {
-				upd["replay_state"] = model.ReplayPending
+			id, err := alloc.score(pl.ExternalID)
+			if err != nil {
+				return err
+			}
+			row := playRow(playerID, p.Name, id, lbIDs[pl.Leaderboard.ExternalID], pl)
+			if row.ReplayState == model.ReplayPending {
 				res.NewReplays++
 			}
-			if _, err := tx.Score.WithContext(ctx).Where(tx.Score.ID.Eq(sc.ID)).Updates(upd); err != nil {
-				return fmt.Errorf("update score %d: %w", sc.ID, err)
-			}
+			res.New++
+			fresh = append(fresh, row)
+			byKey[key] = row // guards against duplicates within one page
 		}
 		if len(fresh) > 0 {
 			if err := tx.Score.WithContext(ctx).CreateInBatches(fresh, 100); err != nil {
@@ -129,9 +90,131 @@ func (s *Service) UpsertScores(ctx context.Context, playerID string, items []sco
 		return nil
 	})
 	if err != nil {
-		return UpsertResult{}, fmt.Errorf("service: upsert scores: %w", err)
+		return UpsertResult{}, fmt.Errorf("service: upsert plays: %w", err)
 	}
 	return res, nil
+}
+
+// idAllocator hands out row IDs. Legacy platforms use their own numeric IDs
+// (Task 7 adds the internal range for the others).
+type idAllocator struct {
+	ctx    context.Context
+	tx     *query.Query
+	legacy bool
+}
+
+func (a *idAllocator) leaderboard(externalID string) (int64, error) { return a.legacyID(externalID) }
+
+func (a *idAllocator) score(externalID string) (int64, error) { return a.legacyID(externalID) }
+
+func (a *idAllocator) legacyID(externalID string) (int64, error) {
+	if !a.legacy {
+		return 0, errors.New("service: non-legacy platforms are not supported yet")
+	}
+	id, err := strconv.ParseInt(externalID, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("service: invalid legacy id %q", externalID)
+	}
+	return id, nil
+}
+
+func upsertLeaderboards(ctx context.Context, tx *query.Query, platformName string, plays []platform.Play, alloc *idAllocator) (map[string]int64, error) {
+	lb := tx.Leaderboard
+	var ext []string
+	seen := map[string]bool{}
+	for _, pl := range plays {
+		if e := pl.Leaderboard.ExternalID; !seen[e] {
+			seen[e] = true
+			ext = append(ext, e)
+		}
+	}
+	existing, err := lb.WithContext(ctx).Where(lb.Platform.Eq(platformName), lb.ExternalID.In(ext...)).Find()
+	if err != nil {
+		return nil, fmt.Errorf("load leaderboards: %w", err)
+	}
+	ids := make(map[string]int64, len(ext))
+	for _, e := range existing {
+		ids[e.ExternalID] = e.ID
+	}
+	rows := make([]*model.Leaderboard, 0, len(ext))
+	done := map[string]bool{}
+	for _, pl := range plays {
+		d := pl.Leaderboard
+		if done[d.ExternalID] {
+			continue
+		}
+		done[d.ExternalID] = true
+		id, ok := ids[d.ExternalID]
+		if !ok {
+			if id, err = alloc.leaderboard(d.ExternalID); err != nil {
+				return nil, err
+			}
+			ids[d.ExternalID] = id
+		}
+		rows = append(rows, &model.Leaderboard{
+			ID: id, SongHash: d.SongHash, SongName: d.SongName, SongSubName: d.SongSubName, SongAuthor: d.SongAuthor,
+			Mapper: d.Mapper, Difficulty: d.Difficulty, DifficultyRaw: d.DifficultyRaw, GameMode: d.GameMode,
+			CoverURL: d.CoverURL, Status: d.Status, Stars: d.Stars, MaxScore: d.MaxScore,
+			Platform: platformName, ExternalID: d.ExternalID, MapKey: platform.MapKey(d.SongHash, d.GameMode, d.Difficulty),
+		})
+	}
+	if err := lb.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}}, UpdateAll: true,
+	}).CreateInBatches(rows, 100); err != nil {
+		return nil, fmt.Errorf("upsert leaderboards: %w", err)
+	}
+	return ids, nil
+}
+
+func existingPlays(ctx context.Context, tx *query.Query, platformName string, plays []platform.Play) (map[string]*model.Score, error) {
+	q := tx.Score
+	ext := make([]string, 0, len(plays))
+	for _, pl := range plays {
+		ext = append(ext, pl.ExternalID)
+	}
+	rows, err := q.WithContext(ctx).Where(q.Platform.Eq(platformName), q.ExternalID.In(ext...)).Find()
+	if err != nil {
+		return nil, fmt.Errorf("load existing scores: %w", err)
+	}
+	out := make(map[string]*model.Score, len(rows))
+	for _, r := range rows {
+		out[r.Kind+"|"+r.ExternalID] = r
+	}
+	return out, nil
+}
+
+func refreshPlay(ctx context.Context, tx *query.Query, old *model.Score, pl platform.Play, res *UpsertResult) error {
+	upd := map[string]any{"rank": pl.Rank, "pp": pl.PP, "personal_best": pl.PersonalBest, "has_replay": pl.HasReplay || old.HasReplay}
+	if pl.HasReplay && old.ReplayState == model.ReplayNone {
+		upd["replay_state"] = model.ReplayPending
+		res.NewReplays++
+	}
+	if pl.ReplayURL != "" && old.ReplayState != model.ReplayArchived {
+		upd["replay_url"] = pl.ReplayURL
+	}
+	if _, err := tx.Score.WithContext(ctx).Where(tx.Score.ID.Eq(old.ID)).Updates(upd); err != nil {
+		return fmt.Errorf("update score %d: %w", old.ID, err)
+	}
+	return nil
+}
+
+func playRow(playerID, platformName string, id, lbID int64, pl platform.Play) *model.Score {
+	state := model.ReplayNone
+	if pl.HasReplay {
+		state = model.ReplayPending
+	}
+	var url *string
+	if pl.ReplayURL != "" {
+		url = &pl.ReplayURL
+	}
+	return &model.Score{
+		ID: id, PlayerID: playerID, LeaderboardID: lbID, Rank: pl.Rank,
+		ModifiedScore: pl.ModifiedScore, UnmodifiedScore: pl.UnmodifiedScore, Accuracy: pl.Accuracy, PP: pl.PP,
+		Mods: pl.Mods, FullCombo: pl.FullCombo, MissedNotes: pl.MissedNotes, BadCuts: pl.BadCuts,
+		MaxCombo: pl.MaxCombo, HMD: pl.HMD, PersonalBest: pl.PersonalBest, SetAt: pl.SetAt.UTC(),
+		HasReplay: pl.HasReplay, ReplayState: state,
+		Platform: platformName, Kind: pl.Kind, EndType: pl.EndType, EndTime: pl.EndTime, ExternalID: pl.ExternalID, ReplayURL: url,
+	}
 }
 
 var likeStripper = strings.NewReplacer("%", "", "_", "")

@@ -8,23 +8,15 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 )
 
-type WindowSnapshot struct {
-	Name            string
-	Limit           int
-	Used            int
-	Period          time.Duration
-	ServerRemaining int // -1 when unknown
-	ServerResetAt   time.Time
-}
-
-type LimiterSnapshot struct {
-	Windows      []WindowSnapshot
-	BlockedUntil time.Time // zero when not blocked by server feedback
-	Waiting      bool
-	WaitUntil    time.Time
-}
+type (
+	WindowSnapshot  = platform.WindowSnapshot
+	LimiterSnapshot = platform.LimiterSnapshot
+)
 
 type window struct {
 	name            string
@@ -61,20 +53,39 @@ func NewLimiter(hourly int) *Limiter {
 	}}
 }
 
+// Name identifies the limiter on the status page and in readiness checks.
+func (l *Limiter) Name() string { return model.PlatformScoreSaber }
+
+// nextAllowed is when the next request may go out; l.mu must be held.
+func (l *Limiter) nextAllowed(now time.Time) time.Time {
+	until := l.blockedUntil
+	for _, w := range l.windows {
+		w.prune(now)
+		if len(w.hits) >= w.limit {
+			if t := w.hits[0].Add(w.period); t.After(until) {
+				until = t
+			}
+		}
+	}
+	return until
+}
+
+// Ready reports whether Wait would return at once at now, and otherwise when it could.
+func (l *Limiter) Ready(now time.Time) (bool, time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if until := l.nextAllowed(now); until.After(now) {
+		return false, until
+	}
+	return true, time.Time{}
+}
+
 // Wait blocks until a request may be sent, then records it in every window.
 func (l *Limiter) Wait(ctx context.Context) error {
 	for {
 		l.mu.Lock()
 		now := time.Now()
-		until := l.blockedUntil
-		for _, w := range l.windows {
-			w.prune(now)
-			if len(w.hits) >= w.limit {
-				if t := w.hits[0].Add(w.period); t.After(until) {
-					until = t
-				}
-			}
-		}
+		until := l.nextAllowed(now)
 		if !until.After(now) {
 			for _, w := range l.windows {
 				w.hits = append(w.hits, now)

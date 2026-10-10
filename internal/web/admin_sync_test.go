@@ -70,7 +70,7 @@ func TestSyncFailedPager(t *testing.T) {
 	e := newEnv(t)
 	c := e.login()
 	ctx := context.Background()
-	p, err := e.svc.AddPlayer(ctx, "1001")
+	p, err := e.svc.AddPlayer(ctx, "1001", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestSyncFailedPager(t *testing.T) {
 	for i := range total {
 		items = append(items, testutil.Item("1001", int64(i+1), 900+int64(i), testutil.T0.Add(time.Duration(i)*time.Minute), true))
 	}
-	if _, err := e.svc.UpsertScores(ctx, p.ID, items); err != nil {
+	if _, err := e.svc.UpsertPlays(ctx, p.ID, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		t.Fatal(err)
 	}
 	for range service.MaxReplayAttempts {

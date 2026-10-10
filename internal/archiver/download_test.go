@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,7 +27,7 @@ func ready(t *testing.T, e *env, items []scoresaber.ScoreItem) string {
 	t.Helper()
 	ctx := context.Background()
 	a := e.add(t, "1001")
-	if _, err := e.svc.UpsertScores(ctx, a, items); err != nil {
+	if _, err := e.svc.UpsertPlays(ctx, a, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		t.Fatal(err)
 	}
 	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey(a))
@@ -173,14 +174,12 @@ func TestStepPriority(t *testing.T) {
 	}
 }
 
-type fakeLimiter struct{ snap scoresaber.LimiterSnapshot }
-
-func (f fakeLimiter) Snapshot() scoresaber.LimiterSnapshot { return f.snap }
-
 func TestStatusReportsRateLimited(t *testing.T) {
-	svc, _, _ := testutil.NewService(t)
-	w := archiver.New(svc, newFake(), fakeLimiter{snap: scoresaber.LimiterSnapshot{Waiting: true}})
-	if st := w.Status(); st.State != archiver.StateIdle || !st.Limiter.Waiting {
-		t.Fatalf("idle worker = %+v", st)
+	l := scoresaber.NewLimiter(300)
+	l.Observe(http.Header{"Retry-After": {"60"}}, http.StatusTooManyRequests)
+	svc, _, _ := testutil.NewServiceWith(t, scoresaber.NewPlatform(newFake(), l))
+	st := archiver.New(svc).Status()
+	if st.State != archiver.StateIdle || len(st.Limiters) != 1 || st.Limiters[0].Platform != "ScoreSaber" || st.Limiter.BlockedUntil.IsZero() {
+		t.Fatalf("status = %+v", st)
 	}
 }

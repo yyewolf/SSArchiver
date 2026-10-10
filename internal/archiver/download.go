@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/storage"
 )
@@ -41,7 +41,15 @@ func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 			Platform: service.Ptr(sc.Platform), Feed: service.Ptr(sc.Kind), Message: msg,
 		})
 	}
-	body, err := w.client.Replay(ctx, sc.ID)
+	p, err := w.platform(sc.Platform)
+	if err != nil {
+		return err
+	}
+	ref := platform.ReplayRef{Kind: sc.Kind, ExternalID: sc.ExternalID}
+	if sc.ReplayURL != nil {
+		ref.URL = *sc.ReplayURL
+	}
+	body, err := p.Adapter.Replay(ctx, ref)
 	if err == nil {
 		size, sum, perr := w.svc.Store().Put(sc.PlayerID, sc.ID, body)
 		_ = body.Close()
@@ -64,14 +72,14 @@ func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 	switch {
 	case ctx.Err() != nil:
 		return ctx.Err()
-	case errors.Is(err, scoresaber.ErrRateLimited):
-		w.svc.Log(ctx, model.SyncEvent{Level: model.LevelWarn, Kind: model.KindRateLimit, Message: "rate limited by ScoreSaber; waiting for the limit to reset"})
+	case errors.Is(err, platform.ErrRateLimited):
+		w.svc.Log(ctx, model.SyncEvent{Level: model.LevelWarn, Kind: model.KindRateLimit, Message: "rate limited by " + p.DisplayName + "; waiting for the limit to reset"})
 		return nil
-	case errors.Is(err, scoresaber.ErrNotFound):
-		if err := w.svc.MarkReplayGone(ctx, sc.ID); err != nil {
+	case errors.Is(err, platform.ErrNotFound):
+		if err := w.svc.MarkReplayGone(ctx, sc.ID, "replay no longer available on "+p.DisplayName); err != nil {
 			return err
 		}
-		ev(model.LevelWarn, "replay no longer available on ScoreSaber")
+		ev(model.LevelWarn, "replay no longer available on "+p.DisplayName)
 		return nil
 	}
 	gaveUp, next, merr := w.svc.MarkReplayAttemptFailed(ctx, sc.ID, err)

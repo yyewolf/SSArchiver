@@ -19,7 +19,8 @@ type ListPlayersOutput struct{ Body []Player }
 
 type AddPlayerInput struct {
 	Body struct {
-		Ref string `json:"ref" minLength:"1" maxLength:"200" doc:"ScoreSaber player ID or profile URL"`
+		Ref      string `json:"ref" minLength:"1" maxLength:"200" doc:"ScoreSaber player ID or profile URL"`
+		Platform string `json:"platform,omitempty" maxLength:"32" doc:"Platform of a bare ID (default: scoresaber). Profile URLs pick their platform."`
 	}
 }
 
@@ -40,7 +41,7 @@ func (a *API) summary(ctx context.Context, id string) (Player, error) {
 	if err != nil {
 		return Player{}, err
 	}
-	return playerDTO(httpx.BaseURLFrom(ctx), sum), nil
+	return playerDTO(httpx.BaseURLFrom(ctx), a.svc.Platforms(), sum), nil
 }
 
 func (a *API) registerPlayers() {
@@ -54,7 +55,7 @@ func (a *API) registerPlayers() {
 		}
 		out := &ListPlayersOutput{Body: make([]Player, 0, len(ps))}
 		for _, p := range ps {
-			out.Body = append(out.Body, playerDTO(httpx.BaseURLFrom(ctx), p))
+			out.Body = append(out.Body, playerDTO(httpx.BaseURLFrom(ctx), a.svc.Platforms(), p))
 		}
 		return out, nil
 	})
@@ -74,7 +75,7 @@ func (a *API) registerPlayers() {
 		OperationID: "add-player", Method: http.MethodPost, Path: "/api/v1/players", DefaultStatus: http.StatusCreated,
 		Summary: "Start tracking a player", Tags: []string{"Players"},
 	}), func(ctx context.Context, in *AddPlayerInput) (*PlayerOutput, error) {
-		p, err := a.svc.AddPlayer(ctx, in.Body.Ref)
+		p, err := a.svc.AddPlayer(ctx, in.Body.Ref, in.Body.Platform)
 		if err != nil {
 			return nil, mapErr(err)
 		}

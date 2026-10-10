@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/avatar"
 	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
@@ -70,17 +70,17 @@ templ AdminPlayersPage(p Page, v AdminPlayersView) {
 	}
 }
 
-templ PlayerPreview(sp scoresaber.Player, tracked bool) {
+templ PlayerPreview(platformName string, prof platform.Profile, tracked bool) {
 	<div class="flex items-center gap-3 rounded-lg border p-3">
 		@avatar.Avatar() {
-			@avatar.Image(avatar.ImageProps{Src: sp.Avatar, Alt: sp.Name})
+			@avatar.Image(avatar.ImageProps{Src: prof.AvatarURL, Alt: prof.Name})
 			@avatar.Fallback() {
-				{ Initials(sp.Name) }
+				{ Initials(prof.Name) }
 			}
 		}
 		<div class="min-w-0 flex-1">
-			<p class="truncate font-medium">{ sp.Name }</p>
-			<p class="font-mono text-xs text-muted-foreground">{ sp.ID } · { sp.Country }</p>
+			<p class="truncate font-medium">{ prof.Name }</p>
+			<p class="font-mono text-xs text-muted-foreground">{ prof.ExternalID } · { prof.Country }</p>
 		</div>
 		if tracked {
 			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
@@ -88,7 +88,8 @@ templ PlayerPreview(sp scoresaber.Player, tracked bool) {
 			}
 		} else {
 			<form hx-post="/admin/players" hx-target="#admin-players" hx-swap="outerHTML">
-				<input type="hidden" name="ref" value={ sp.ID }/>
+				<input type="hidden" name="ref" value={ prof.ExternalID }/>
+				<input type="hidden" name="platform" value={ platformName }/>
 				@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm}) {
 					@icon.Plus()
 					Track player

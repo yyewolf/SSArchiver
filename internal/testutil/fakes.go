@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -14,11 +15,19 @@ import (
 // T0 is the default fake "now" for service tests.
 var T0 = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 
-// Resolver is a fake service.Resolver.
+// Resolver is a fake scoresaber.API.
 type Resolver struct {
 	mu      sync.Mutex
 	Players map[string]scoresaber.Player
 	Calls   int
+}
+
+// DefaultPlayers are the ScoreSaber accounts the fakes know.
+func DefaultPlayers() map[string]scoresaber.Player {
+	return map[string]scoresaber.Player{
+		"1001": {ID: "1001", Name: "Alice", Country: "FR", Avatar: "https://cdn.scoresaber.com/avatars/1001.jpg"},
+		"1002": {ID: "1002", Name: "Bob", Country: "US", Avatar: "https://cdn.scoresaber.com/avatars/1002.jpg"},
+	}
 }
 
 func (r *Resolver) Player(_ context.Context, id string) (scoresaber.Player, error) {
@@ -30,6 +39,15 @@ func (r *Resolver) Player(_ context.Context, id string) (scoresaber.Player, erro
 		return scoresaber.Player{}, fmt.Errorf("%w: player %s", scoresaber.ErrNotFound, id)
 	}
 	return p, nil
+}
+
+// Scores returns an empty listing (service tests drive upserts directly).
+func (r *Resolver) Scores(context.Context, string, int) (scoresaber.ScorePage, error) {
+	return scoresaber.ScorePage{}, nil
+}
+
+func (r *Resolver) Replay(_ context.Context, id int64) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("%w: replay %d", scoresaber.ErrNotFound, id)
 }
 
 // Clock is a manually advanced clock.

@@ -14,6 +14,7 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/archiver"
 	"github.com/yyewolf/ssarchiver/internal/config"
 	"github.com/yyewolf/ssarchiver/internal/httpx"
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
@@ -100,7 +101,7 @@ func (e *testEnv) login() *http.Cookie {
 func (e *testEnv) seed() string {
 	e.t.Helper()
 	ctx := context.Background()
-	p, err := e.svc.AddPlayer(ctx, "1001")
+	p, err := e.svc.AddPlayer(ctx, "1001", "")
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func (e *testEnv) seed() string {
 	}
 	items[0].Leaderboard.Map.SongName = "Hell of a time"
 	items[0].Leaderboard.Realm.LeaderboardStatus = "RANKED"
-	if _, err := e.svc.UpsertScores(ctx, p.ID, items); err != nil {
+	if _, err := e.svc.UpsertPlays(ctx, p.ID, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		e.t.Fatal(err)
 	}
 	size, sum, err := e.svc.Store().Put(p.ID, 1, strings.NewReader("ScoreSaber Replay bytes"))

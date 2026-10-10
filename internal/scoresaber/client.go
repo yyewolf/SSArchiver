@@ -3,7 +3,6 @@ package scoresaber
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/buildinfo"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 )
 
 const (
@@ -20,8 +20,8 @@ const (
 )
 
 var (
-	ErrNotFound    = errors.New("scoresaber: not found")
-	ErrRateLimited = errors.New("scoresaber: rate limited")
+	ErrNotFound    = platform.ErrNotFound
+	ErrRateLimited = platform.ErrRateLimited
 )
 
 // StatusError is returned for unexpected non-2xx responses.

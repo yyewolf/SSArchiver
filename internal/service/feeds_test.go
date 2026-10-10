@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
@@ -77,7 +77,7 @@ func TestUpdatePlayerProfileKeepsEmptyFields(t *testing.T) {
 	svc, _, _ := testutil.NewService(t)
 	ctx := context.Background()
 	a := mustAdd(t, svc, "1001")
-	_ = svc.UpdatePlayerProfile(ctx, a, scoresaber.Player{Name: "Alice2", Avatar: "a.jpg"})
+	_ = svc.UpdatePlayerProfile(ctx, a, platform.Profile{Name: "Alice2", AvatarURL: "a.jpg"})
 	p, _ := svc.GetPlayer(ctx, a)
 	if p.Name != "Alice2" || p.AvatarURL != "a.jpg" || p.Country != "FR" {
 		t.Fatalf("profile update = %+v (empty fields must not overwrite)", p)

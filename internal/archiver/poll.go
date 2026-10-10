@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 )
 
@@ -24,23 +24,27 @@ func (w *Worker) poll(ctx context.Context, wf *service.WorkFeed) error {
 	var newScores, newReplays, pagesRead, totalPages int
 	reachedEnd := false
 	for page := 1; page <= MaxPollPages; page++ {
-		sp, err := w.client.Scores(ctx, wf.ExternalID, page)
+		p, err := w.platform(wf.Platform)
 		if err != nil {
-			return w.clientError(ctx, wf, err, true)
+			return err
 		}
-		pagesRead, totalPages = page, sp.Metadata.TotalPages
-		if page == 1 && len(sp.Data) > 0 {
-			if err := w.svc.UpdatePlayerProfile(ctx, wf.PlayerID, sp.Data[0].Score.Player); err != nil {
+		pg, err := p.Adapter.FeedPage(ctx, wf.Feed, wf.ExternalID, page)
+		if err != nil {
+			return w.clientError(ctx, p, wf, err, true)
+		}
+		pagesRead, totalPages = page, pg.TotalPages
+		if page == 1 && len(pg.Plays) > 0 && pg.Plays[0].Profile != nil {
+			if err := w.svc.RefreshProfile(ctx, wf.PlayerID, wf.Platform, *pg.Plays[0].Profile); err != nil {
 				return err
 			}
 		}
-		res, err := w.svc.UpsertScores(ctx, wf.PlayerID, sp.Data)
+		res, err := w.svc.UpsertPlays(ctx, wf.PlayerID, wf.Platform, pg.Plays)
 		if err != nil {
 			return err
 		}
 		newScores += res.New
 		newReplays += res.NewReplays
-		if res.Known > 0 || len(sp.Data) == 0 || page >= sp.Metadata.TotalPages {
+		if res.Known > 0 || len(pg.Plays) == 0 || page >= pg.TotalPages {
 			reachedEnd = true
 			break
 		}
@@ -65,24 +69,35 @@ func (w *Worker) poll(ctx context.Context, wf *service.WorkFeed) error {
 		return err
 	}
 	if newScores > 0 {
-		w.svc.Log(ctx, feedEvent(wf, model.LevelInfo, model.KindScores, fmt.Sprintf("%d new scores, %d with replays", newScores, newReplays)))
+		w.svc.Log(ctx, feedEvent(wf, model.LevelInfo, model.KindScores, fmt.Sprintf("%d new %s, %d with replays", newScores, noun(wf.Feed), newReplays)))
 	}
 	return nil
+}
+
+func noun(kind string) string {
+	if kind == model.KindScore {
+		return "scores"
+	}
+	return kind + "s"
 }
 
 func (w *Worker) backfill(ctx context.Context, wf *service.WorkFeed) error {
 	page := max(wf.BackfillPage, 1)
 	w.setStatus(StateRunning, fmt.Sprintf("Backfilling %s · page %d", wf.PlayerName, page))
-	sp, err := w.client.Scores(ctx, wf.ExternalID, page)
+	p, err := w.platform(wf.Platform)
 	if err != nil {
-		return w.clientError(ctx, wf, err, false)
+		return err
 	}
-	if _, err := w.svc.UpsertScores(ctx, wf.PlayerID, sp.Data); err != nil {
+	pg, err := p.Adapter.FeedPage(ctx, wf.Feed, wf.ExternalID, page)
+	if err != nil {
+		return w.clientError(ctx, p, wf, err, false)
+	}
+	if _, err := w.svc.UpsertPlays(ctx, wf.PlayerID, wf.Platform, pg.Plays); err != nil {
 		return err
 	}
 	k := wf.Key()
-	total := sp.Metadata.TotalPages
-	if len(sp.Data) == 0 || page >= total {
+	total := pg.TotalPages
+	if len(pg.Plays) == 0 || page >= total {
 		if err := w.svc.SetFeedBackfill(ctx, k, model.BackfillDone, page+1, total); err != nil {
 			return err
 		}
@@ -93,17 +108,17 @@ func (w *Worker) backfill(ctx context.Context, wf *service.WorkFeed) error {
 }
 
 // clientError classifies a platform error during a poll (polling=true) or a backfill page.
-func (w *Worker) clientError(ctx context.Context, wf *service.WorkFeed, err error, polling bool) error {
+func (w *Worker) clientError(ctx context.Context, p platform.Platform, wf *service.WorkFeed, err error, polling bool) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	k := wf.Key()
 	switch {
-	case errors.Is(err, scoresaber.ErrRateLimited):
-		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindRateLimit, "rate limited by ScoreSaber; waiting for the limit to reset"))
+	case errors.Is(err, platform.ErrRateLimited):
+		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindRateLimit, "rate limited by "+p.DisplayName+"; waiting for the limit to reset"))
 		return nil
-	case errors.Is(err, scoresaber.ErrNotFound):
-		const msg = "player not found on ScoreSaber; tracking of this account disabled"
+	case errors.Is(err, platform.ErrNotFound):
+		msg := "player not found on " + p.DisplayName + "; tracking of this account disabled"
 		if err := w.svc.MarkIdentityError(ctx, wf.PlayerID, wf.Platform, msg, true); err != nil {
 			return err
 		}

@@ -13,7 +13,6 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/platform"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/storage"
 )
 
@@ -23,16 +22,11 @@ var (
 	ErrInvalidPlayerRef = errors.New("enter a ScoreSaber player ID or profile URL (https://scoresaber.com/u/<id>)")
 )
 
-// Resolver looks players up on ScoreSaber (implemented by *scoresaber.Client).
-type Resolver interface {
-	Player(ctx context.Context, id string) (scoresaber.Player, error)
-}
-
 type Service struct {
 	db    *gorm.DB
 	q     *query.Query
 	store *storage.Store
-	ss    Resolver
+	reg   *platform.Registry
 
 	clockMu sync.RWMutex
 	now     func() time.Time
@@ -41,17 +35,17 @@ type Service struct {
 	wake chan struct{}
 }
 
-func New(gdb *gorm.DB, store *storage.Store, ss Resolver) *Service {
+func New(gdb *gorm.DB, store *storage.Store, reg *platform.Registry) *Service {
 	return &Service{
-		db:    gdb,
-		q:     query.Use(gdb),
-		store: store,
-		ss:    ss,
+		db: gdb, q: query.Use(gdb), store: store, reg: reg,
 		now:   func() time.Time { return time.Now().UTC() },
 		newID: platform.NewPlayerID,
 		wake:  make(chan struct{}, 1),
 	}
 }
+
+// Platforms is the registry of platforms this instance archives from.
+func (s *Service) Platforms() *platform.Registry { return s.reg }
 
 func (s *Service) Now() time.Time {
 	s.clockMu.RLock()

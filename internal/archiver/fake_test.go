@@ -66,6 +66,13 @@ func (f *fakeClient) Replay(_ context.Context, id int64) (io.ReadCloser, error) 
 	return nil, fmt.Errorf("%w: replay %d", scoresaber.ErrNotFound, id)
 }
 
+func (f *fakeClient) Player(_ context.Context, id string) (scoresaber.Player, error) {
+	if p, ok := testutil.DefaultPlayers()[id]; ok {
+		return p, nil
+	}
+	return scoresaber.Player{ID: id, Name: "Player " + id}, nil
+}
+
 func (f *fakeClient) calls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -105,9 +112,9 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	svc, _, clk := testutil.NewService(t)
 	fc := newFake()
-	return &env{svc: svc, clk: clk, fc: fc, w: archiver.New(svc, fc, nil)}
+	svc, _, clk := testutil.NewServiceWith(t, scoresaber.NewPlatform(fc, nil))
+	return &env{svc: svc, clk: clk, fc: fc, w: archiver.New(svc)}
 }
 
 func (e *env) add(t *testing.T, id string) string {

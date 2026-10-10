@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 )
 
@@ -34,12 +35,13 @@ type Feed struct {
 }
 
 type Identity struct {
-	Platform  string    `json:"platform" example:"scoresaber"`
-	ID        string    `json:"id" doc:"The player's ID on that platform" example:"76561198038925092"`
-	Enabled   bool      `json:"enabled"`
-	LinkedAt  time.Time `json:"linked_at"`
-	LastError string    `json:"last_error,omitempty"`
-	Feeds     []Feed    `json:"feeds"`
+	Platform   string    `json:"platform" example:"scoresaber"`
+	ID         string    `json:"id" doc:"The player's ID on that platform" example:"76561198038925092"`
+	ProfileURL string    `json:"profile_url"`
+	Enabled    bool      `json:"enabled"`
+	LinkedAt   time.Time `json:"linked_at"`
+	LastError  string    `json:"last_error,omitempty"`
+	Feeds      []Feed    `json:"feeds"`
 }
 
 type Player struct {
@@ -116,7 +118,7 @@ func difficultyName(d int) string {
 	return "Unknown"
 }
 
-func playerDTO(base string, p service.PlayerSummary) Player {
+func playerDTO(base string, reg *platform.Registry, p service.PlayerSummary) Player {
 	sync := p.Sync()
 	out := Player{
 		ID: p.ID, Name: p.Name, AvatarURL: p.AvatarURL, Country: p.Country, Enabled: p.Enabled,
@@ -128,6 +130,9 @@ func playerDTO(base string, p service.PlayerSummary) Player {
 	}
 	for _, id := range p.Identities {
 		dto := Identity{Platform: id.Platform, ID: id.ExternalID, Enabled: id.Enabled, LinkedAt: id.LinkedAt, LastError: id.LastError, Feeds: make([]Feed, 0, len(id.Feeds))}
+		if pl, ok := reg.Get(id.Platform); ok {
+			dto.ProfileURL = pl.ProfileURL(id.ExternalID)
+		}
 		for _, f := range id.Feeds {
 			dto.Feeds = append(dto.Feeds, Feed{
 				Kind: f.Feed, Enabled: f.Enabled, Access: f.Access, StartedAt: f.StartedAt, LastPolledAt: f.LastPolledAt, LastError: f.LastError,

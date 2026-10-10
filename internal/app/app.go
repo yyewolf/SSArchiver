@@ -18,6 +18,7 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/buildinfo"
 	"github.com/yyewolf/ssarchiver/internal/config"
 	"github.com/yyewolf/ssarchiver/internal/db"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/storage"
@@ -55,9 +56,13 @@ func New(cfg config.Config, opts Options) (*App, error) {
 	if opts.ScoreSaberURL != "" {
 		copts = append(copts, scoresaber.WithBaseURL(opts.ScoreSaberURL))
 	}
-	client := scoresaber.NewClient(limiter, copts...)
-	svc := service.New(gdb, store, client)
-	worker := archiver.New(svc, client, limiter)
+	reg, err := platform.NewRegistry(scoresaber.NewPlatform(scoresaber.NewClient(limiter, copts...), limiter))
+	if err != nil {
+		_ = db.Close(gdb)
+		return nil, fmt.Errorf("app: platforms: %w", err)
+	}
+	svc := service.New(gdb, store, reg)
+	worker := archiver.New(svc)
 	vh := viewer.NewHandler(viewer.Bundle(), viewer.DeploySHA)
 	if !vh.Available() {
 		slog.Warn("ArcViewer bundle not embedded: replays can be downloaded but not watched", "fix", "go generate ./internal/viewer && rebuild")

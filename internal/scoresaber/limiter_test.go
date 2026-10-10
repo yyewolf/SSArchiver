@@ -135,6 +135,27 @@ func TestWaitHonoursContext(t *testing.T) {
 	})
 }
 
+func TestLimiterReady(t *testing.T) {
+	l := NewLimiter(300)
+	if l.Name() != "scoresaber" {
+		t.Fatalf("Name = %q", l.Name())
+	}
+	if ok, _ := l.Ready(time.Now()); !ok {
+		t.Fatal("fresh limiter must be ready")
+	}
+	ctx := context.Background()
+	for range 20 { // the short window allows 20 per 10 s
+		if err := l.Wait(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	ok, at := l.Ready(now)
+	if ok || !at.After(now) || at.After(now.Add(10*time.Second)) {
+		t.Fatalf("full short window: Ready = %v %v", ok, at)
+	}
+}
+
 func TestSnapshot(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := NewLimiter(300)

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
@@ -28,7 +29,7 @@ func upsert(t *testing.T, svc *service.Service, playerID string, clk *testutil.C
 	for i, it := range items {
 		list = append(list, testutil.Item(playerID, it.id, it.id+1000, clk.Now().Add(time.Duration(i+1)*time.Minute), it.hasReplay))
 	}
-	res, err := svc.UpsertScores(context.Background(), playerID, list)
+	res, err := svc.UpsertPlays(context.Background(), playerID, model.PlatformScoreSaber, scoresaber.Plays(list))
 	if err != nil {
 		t.Fatal(err)
 	}

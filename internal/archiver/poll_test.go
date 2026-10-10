@@ -203,9 +203,9 @@ func TestWorkerPollsAccountIDNotPlayerID(t *testing.T) {
 }
 
 func TestLegacyPlayerWithDifferentAccountID(t *testing.T) {
-	svc, gdb, _, clk := testutil.NewServiceWithDB(t)
 	fc := newFake()
-	e := &env{svc: svc, clk: clk, fc: fc, w: archiver.New(svc, fc, nil)}
+	svc, gdb, clk := testutil.NewServiceWith(t, scoresaber.NewPlatform(fc, nil))
+	e := &env{svc: svc, clk: clk, fc: fc, w: archiver.New(svc)}
 	ctx := context.Background()
 	// A legacy-style player whose ID is digits but is not its ScoreSaber ID
 	// (e.g. relinked after an unlink): the worker must use the account ID.

@@ -9,7 +9,6 @@ import (
 	"unicode"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
-	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
@@ -48,27 +47,27 @@ func (h *Handler) lookupPlayer(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	sp, err := h.svc.ResolvePlayer(r.Context(), r.PostFormValue("ref"))
+	plat, prof, err := h.svc.ResolvePlayer(r.Context(), r.PostFormValue("ref"), r.PostFormValue("platform"))
 	switch {
 	case errors.Is(err, service.ErrInvalidPlayerRef):
 		render(w, r, http.StatusOK, views.FormError(sentence(err)))
 		return
 	case isNotFound(err):
-		render(w, r, http.StatusOK, views.FormError("No ScoreSaber player found for that ID."))
+		render(w, r, http.StatusOK, views.FormError("No "+plat.DisplayName+" player found for that ID."))
 		return
 	case err != nil:
-		render(w, r, http.StatusOK, views.FormError("ScoreSaber could not be reached: "+err.Error()))
+		render(w, r, http.StatusOK, views.FormError(plat.DisplayName+" could not be reached: "+err.Error()))
 		return
 	}
-	_, gerr := h.svc.PlayerByIdentity(r.Context(), model.PlatformScoreSaber, sp.ID)
-	render(w, r, http.StatusOK, views.PlayerPreview(sp, gerr == nil))
+	_, gerr := h.svc.PlayerByIdentity(r.Context(), plat.Name, prof.ExternalID)
+	render(w, r, http.StatusOK, views.PlayerPreview(plat.Name, prof, gerr == nil))
 }
 
 func (h *Handler) addPlayer(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	p, err := h.svc.AddPlayer(r.Context(), r.PostFormValue("ref"))
+	p, err := h.svc.AddPlayer(r.Context(), r.PostFormValue("ref"), r.PostFormValue("platform"))
 	switch {
 	case errors.Is(err, service.ErrPlayerExists):
 		h.toastOnly(w, r, toast.TypeWarning, "Already tracked", "This player is already archived here.")

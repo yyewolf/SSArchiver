@@ -66,7 +66,7 @@ func call(t *testing.T, h http.Handler, method, path string, body any) (int, map
 func seed(t *testing.T, svc *service.Service) string {
 	t.Helper()
 	ctx := context.Background()
-	p, err := svc.AddPlayer(ctx, "1001")
+	p, err := svc.AddPlayer(ctx, "1001", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func seed(t *testing.T, svc *service.Service) string {
 		testutil.Item("1001", 1, 501, testutil.T0.Add(2*time.Minute), true),
 		testutil.Item("1001", 2, 502, testutil.T0.Add(time.Minute), true),
 	}
-	if _, err := svc.UpsertScores(ctx, p.ID, items); err != nil {
+	if _, err := svc.UpsertPlays(ctx, p.ID, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		t.Fatal(err)
 	}
 	size, sum, _ := svc.Store().Put(p.ID, 1, strings.NewReader("replay"))

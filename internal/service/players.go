@@ -5,31 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/yyewolf/ssarchiver/internal/db"
 	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 )
-
-var playerURLRe = regexp.MustCompile(`^(?:https?://)?(?:www\.)?scoresaber\.com/u/([0-9]{1,32})(?:[/?#].*)?$`)
-
-var ssIDRe = regexp.MustCompile(`^[0-9]{1,32}$`)
-
-// ParsePlayerRef extracts a ScoreSaber account ID from an ID or profile URL.
-func ParsePlayerRef(input string) (string, error) {
-	in := strings.TrimSpace(input)
-	if ssIDRe.MatchString(in) {
-		return in, nil
-	}
-	if m := playerURLRe.FindStringSubmatch(in); m != nil {
-		return m[1], nil
-	}
-	return "", ErrInvalidPlayerRef
-}
 
 type Counts struct {
 	Scores, Archived, Pending, Failed, Gone int64
@@ -95,16 +77,16 @@ func (s *Service) updatePlayer(ctx context.Context, id string, upd map[string]an
 }
 
 // UpdatePlayerProfile refreshes name/avatar/country from score payloads; empty values are ignored.
-func (s *Service) UpdatePlayerProfile(ctx context.Context, id string, sp scoresaber.Player) error {
+func (s *Service) UpdatePlayerProfile(ctx context.Context, id string, prof platform.Profile) error {
 	upd := map[string]any{}
-	if sp.Name != "" {
-		upd["name"] = sp.Name
+	if prof.Name != "" {
+		upd["name"] = prof.Name
 	}
-	if sp.Avatar != "" {
-		upd["avatar_url"] = sp.Avatar
+	if prof.AvatarURL != "" {
+		upd["avatar_url"] = prof.AvatarURL
 	}
-	if sp.Country != "" {
-		upd["country"] = sp.Country
+	if prof.Country != "" {
+		upd["country"] = prof.Country
 	}
 	if len(upd) == 0 {
 		return nil
@@ -113,12 +95,11 @@ func (s *Service) UpdatePlayerProfile(ctx context.Context, id string, sp scoresa
 }
 
 // platformOrder ranks platforms for display: the legacy platform first.
-// Task 6 switches it to the registry's priorities.
 func (s *Service) platformOrder(name string) int {
-	if name == model.PlatformScoreSaber {
+	if s.reg == nil {
 		return 0
 	}
-	return 1
+	return s.reg.Priority(name)
 }
 
 // identitiesBy loads accounts with their feeds, for one player or all.
@@ -170,16 +151,24 @@ func (s *Service) GetPlayerSummary(ctx context.Context, id string) (PlayerSummar
 	return PlayerSummary{Player: *p, Counts: counts[id], Identities: ids[id]}, nil
 }
 
-func (s *Service) ResolvePlayer(ctx context.Context, input string) (scoresaber.Player, error) {
-	id, err := ParsePlayerRef(input)
+// ResolvePlayer parses an admin's reference (profile URL or ID; platformName
+// "" auto-detects) and looks the account up live.
+func (s *Service) ResolvePlayer(ctx context.Context, ref, platformName string) (platform.Platform, platform.Profile, error) {
+	p, id, err := s.reg.ParseRef(ref, platformName)
 	if err != nil {
-		return scoresaber.Player{}, err
+		return platform.Platform{}, platform.Profile{}, ErrInvalidPlayerRef
 	}
-	p, err := s.ss.Player(ctx, id)
-	if errors.Is(err, scoresaber.ErrNotFound) {
-		return scoresaber.Player{}, fmt.Errorf("%w: no ScoreSaber player %s", ErrNotFound, id)
+	prof, err := p.Adapter.Resolve(ctx, id)
+	if errors.Is(err, platform.ErrNotFound) {
+		return p, platform.Profile{}, fmt.Errorf("%w: no %s player %s", ErrNotFound, p.DisplayName, id)
 	}
-	return p, err
+	if err != nil {
+		return p, platform.Profile{}, err
+	}
+	if prof.ExternalID == "" {
+		prof.ExternalID = id
+	}
+	return p, prof, nil
 }
 
 // PlayerByIdentity finds the player a platform account is linked to.
@@ -212,12 +201,12 @@ func (s *Service) freePlayerID(ctx context.Context) (string, error) {
 	return "", errors.New("service: could not draw a free player ID")
 }
 
-func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, error) {
-	sp, err := s.ResolvePlayer(ctx, input)
+func (s *Service) AddPlayer(ctx context.Context, ref, platformName string) (*model.Player, error) {
+	plat, prof, err := s.ResolvePlayer(ctx, ref, platformName)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.PlayerByIdentity(ctx, model.PlatformScoreSaber, sp.ID); err == nil {
+	if _, err := s.PlayerByIdentity(ctx, plat.Name, prof.ExternalID); err == nil {
 		return nil, ErrPlayerExists
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
@@ -227,20 +216,22 @@ func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, e
 		return nil, err
 	}
 	now := s.Now()
-	p := &model.Player{
-		ID: id, Name: sp.Name, AvatarURL: sp.Avatar, Country: sp.Country,
-		Enabled: true, AddedAt: now,
-	}
+	p := &model.Player{ID: id, Name: prof.Name, AvatarURL: prof.AvatarURL, Country: prof.Country, Enabled: true, AddedAt: now}
 	err = s.q.Transaction(func(tx *query.Query) error {
 		if err := tx.Player.WithContext(ctx).Create(p); err != nil {
 			return err
 		}
 		if err := tx.PlayerPlatform.WithContext(ctx).Create(&model.PlayerPlatform{
-			PlayerID: p.ID, Platform: model.PlatformScoreSaber, ExternalID: sp.ID, Enabled: true, LinkedAt: now,
+			PlayerID: id, Platform: plat.Name, ExternalID: prof.ExternalID, Enabled: true, LinkedAt: now,
 		}); err != nil {
 			return err
 		}
-		return tx.SyncFeed.WithContext(ctx).Create(newFeed(p.ID, model.PlatformScoreSaber, model.KindScore, now, model.AccessNA))
+		for _, f := range plat.RequiredFeeds() {
+			if err := tx.SyncFeed.WithContext(ctx).Create(newFeed(id, plat.Name, f.Kind, now, model.AccessNA)); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		if db.IsDuplicate(err) {
@@ -248,9 +239,29 @@ func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, e
 		}
 		return nil, fmt.Errorf("service: add player: %w", err)
 	}
-	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: Ptr(p.ID), Message: "player added: " + p.Name})
+	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: Ptr(p.ID), Platform: Ptr(plat.Name), Message: "player added: " + p.Name})
 	s.Wake()
 	return p, nil
+}
+
+// RefreshProfile updates the player's display identity from one platform's
+// profile, but only when that platform is the player's primary enabled
+// account (spec §4.2).
+func (s *Service) RefreshProfile(ctx context.Context, playerID, platformName string, prof platform.Profile) error {
+	ids, err := s.identitiesBy(ctx, playerID)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids[playerID] {
+		if !id.Enabled {
+			continue
+		}
+		if id.Platform != platformName {
+			return nil
+		}
+		return s.UpdatePlayerProfile(ctx, playerID, prof)
+	}
+	return nil
 }
 
 // Identities lists a player's linked platform accounts.

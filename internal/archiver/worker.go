@@ -1,28 +1,18 @@
-// Package archiver is the background worker that polls ScoreSaber, walks
-// player history and downloads replays (spec §6).
+// Package archiver is the background worker that polls every platform's
+// feeds, walks player history and downloads replays (spec §6).
 package archiver
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/scoresaber"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 )
-
-type Client interface {
-	Scores(ctx context.Context, playerID string, page int) (scoresaber.ScorePage, error)
-	Replay(ctx context.Context, scoreID int64) (io.ReadCloser, error)
-}
-
-type LimiterSource interface {
-	Snapshot() scoresaber.LimiterSnapshot
-}
 
 type State string
 
@@ -34,11 +24,19 @@ const (
 	StateStopped     State = "stopped"
 )
 
+// LimiterStatus is one platform limiter's state, for the status page and API.
+type LimiterStatus struct {
+	Platform string // display name
+	Name     string
+	Snapshot platform.LimiterSnapshot
+}
+
 type Status struct {
-	State   State
-	Task    string
-	Since   time.Time
-	Limiter scoresaber.LimiterSnapshot
+	State    State
+	Task     string
+	Since    time.Time
+	Limiter  platform.LimiterSnapshot // the legacy platform's limiter (API windows/blocked_until)
+	Limiters []LimiterStatus
 }
 
 const (
@@ -48,9 +46,7 @@ const (
 )
 
 type Worker struct {
-	svc     *service.Service
-	client  Client
-	limiter LimiterSource
+	svc *service.Service
 
 	mu     sync.RWMutex
 	status Status
@@ -60,8 +56,8 @@ type Worker struct {
 	lastPrune        time.Time
 }
 
-func New(svc *service.Service, c Client, l LimiterSource) *Worker {
-	return &Worker{svc: svc, client: c, limiter: l, status: Status{State: StateIdle, Since: svc.Now()}}
+func New(svc *service.Service) *Worker {
+	return &Worker{svc: svc, status: Status{State: StateIdle, Since: svc.Now()}}
 }
 
 func (w *Worker) setStatus(state State, task string) {
@@ -77,13 +73,32 @@ func (w *Worker) Status() Status {
 	w.mu.RLock()
 	st := w.status
 	w.mu.RUnlock()
-	if w.limiter != nil {
-		st.Limiter = w.limiter.Snapshot()
-		if st.State == StateRunning && st.Limiter.Waiting {
-			st.State = StateRateLimited
+	reg := w.svc.Platforms()
+	if reg == nil {
+		return st
+	}
+	legacySet := false
+	for _, p := range reg.All() {
+		for _, l := range p.Adapter.Limiters() {
+			snap := l.Snapshot()
+			st.Limiters = append(st.Limiters, LimiterStatus{Platform: p.DisplayName, Name: l.Name(), Snapshot: snap})
+			if p.Legacy && !legacySet {
+				st.Limiter, legacySet = snap, true
+			}
+			if st.State == StateRunning && snap.Waiting {
+				st.State = StateRateLimited
+			}
 		}
 	}
 	return st
+}
+
+func (w *Worker) platform(name string) (platform.Platform, error) {
+	p, ok := w.svc.Platforms().Get(name)
+	if !ok {
+		return platform.Platform{}, fmt.Errorf("archiver: unknown platform %q", name)
+	}
+	return p, nil
 }
 
 // Run loops until ctx is cancelled.

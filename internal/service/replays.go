@@ -95,9 +95,9 @@ func (s *Service) MarkReplayArchived(ctx context.Context, id, size int64, sha st
 	})
 }
 
-func (s *Service) MarkReplayGone(ctx context.Context, id int64) error {
+func (s *Service) MarkReplayGone(ctx context.Context, id int64, reason string) error {
 	return s.updateScore(ctx, id, map[string]any{
-		"replay_state": model.ReplayGone, "next_attempt_at": nil, "last_error": "replay no longer available on ScoreSaber",
+		"replay_state": model.ReplayGone, "next_attempt_at": nil, "last_error": reason,
 	})
 }
 

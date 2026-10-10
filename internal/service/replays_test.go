@@ -30,7 +30,7 @@ func seedQueue(t *testing.T) (*service.Service, *testutil.Clock, string, string)
 		},
 	}
 	for p, list := range items {
-		if _, err := svc.UpsertScores(ctx, p, list); err != nil {
+		if _, err := svc.UpsertPlays(ctx, p, model.PlatformScoreSaber, scoresaber.Plays(list)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -135,7 +135,7 @@ func TestMarkReplayAttemptFailedBackoff(t *testing.T) {
 func TestMarkReplayGoneAndArchived(t *testing.T) {
 	svc, clk, _, _ := seedQueue(t)
 	ctx := context.Background()
-	if err := svc.MarkReplayGone(ctx, 1); err != nil {
+	if err := svc.MarkReplayGone(ctx, 1, "replay no longer available on ScoreSaber"); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.MarkReplayArchived(ctx, 2, 99, "cafe"); err != nil {
