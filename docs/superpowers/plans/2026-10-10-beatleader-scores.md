@@ -62,24 +62,34 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 | # | Task | Status | Owner | Started | Commit |
 |---|------|--------|-------|---------|--------|
-| 1 | `internal/beatleader` client: types, limiters, allowlisted replays | ⬜ todo | | | |
-| 2 | BeatLeader adapter + registry entry + app wiring | ⬜ todo | | | |
-| 3 | Generic play semantics: PB supersede, kept archives, refused replays, profile via `Resolve` | ⬜ todo | | | |
-| 4 | Account management: link, unlink, enable; per-account counts | ⬜ todo | | | |
-| 5 | Merge and aliases | ⬜ todo | | | |
-| 6 | Score queries: new filters, map groups, lookup by platform ID | ⬜ todo | | | |
-| 7 | Registry-built links, per-platform public routes, registry-built CSP | ⬜ todo | | | |
-| 8 | Merged player page | ⬜ todo | | | |
-| 9 | Admin UI: accounts, link/unlink/merge; sync queue per feed; event filters | ⬜ todo | | | |
-| 10 | JSON API: accounts, merge, filters, per-platform scores | ⬜ todo | | | |
-| 11 | BeatLeader end-to-end test + docs | ⬜ todo | | | |
+| 1 | `internal/beatleader` client: types, limiters, allowlisted replays | ✅ done | SDD controller | 2026-10-10 | dab88d1 |
+| 2 | BeatLeader adapter + registry entry + app wiring | ✅ done | SDD controller | 2026-10-10 | 9e02e16 |
+| 3 | Generic play semantics: PB supersede, kept archives, refused replays, profile via `Resolve` | ✅ done | SDD controller | 2026-10-10 | 62d9df9 |
+| 4 | Account management: link, unlink, enable; per-account counts | ✅ done | SDD controller | 2026-10-10 | 4a63461 |
+| 5 | Merge and aliases | ✅ done | SDD controller | 2026-10-10 | 77c6d9a + 3967457 |
+| 6 | Score queries: new filters, map groups, lookup by platform ID | ✅ done | SDD controller | 2026-10-10 | e6529d1 |
+| 7 | Registry-built links, per-platform public routes, registry-built CSP | ✅ done | SDD controller | 2026-10-10 | b093bb2 |
+| 8 | Merged player page | ✅ done | SDD controller | 2026-10-10 | 7fefbf2 |
+| 9 | Admin UI: accounts, link/unlink/merge; sync queue per feed; event filters | ✅ done | SDD controller | 2026-10-10 | 74dbb14 |
+| 10 | JSON API: accounts, merge, filters, per-platform scores | ✅ done | SDD controller | 2026-10-10 | f13d54f |
+| 11 | BeatLeader end-to-end test + docs | ✅ done | SDD controller | 2026-10-10 | 591a66c |
 
 ### Session hand-off
 
 _Current task:_ —
-_Next step:_ Task 1.
+_Next step:_ Task 11 Step 5 — the manual `make run` check against live BeatLeader (human visual pass; the automated suite, including `TestBeatLeaderEndToEnd` and the `-tags live` smoke test, is green).
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ The BeatLeader facts this plan relies on were re-verified live on 2026-10-10 while writing it: `GET /player/{id}?stats=false`; scores listing `timeset` is a string; score replays appear under both `cdn.replays.beatleader.xyz` and `api.beatleader.xyz/replays-storage/` (the latter has no redirect, answers `HEAD` with 405, and carries the API rate-limit headers); `/player/{bogus}` → 404; avatars may be on `avatars.akamai.steamstatic.com`. The fixtures in Task 1 are trimmed from the instance owner's own live responses.
+_Notes for next agent:_ All 11 tasks implemented and reviewed 2026-10-10 via subagent-driven development; every task review approved, one fix round (Task 5: merge keeps unlocatable replay files). Deviations are all lint/gofumpt-driven except the `chipWhere`→`bestWhere` rename (gosec G101) and the `#nosec G710` on the alias 301 (repo pattern). Plan 3 consumes these names unchanged except `chipWhere`→`bestWhere` (internal to Task 6's `groups.go`, not referenced by Plan 3).
+
+### Verification log
+
+| Date | Task | Command(s) | Result |
+|------|------|------------|--------|
+| 2026-10-10 | 1–11 | `go test -race ./...` (per task on touched packages, full suite before each commit) | all packages ok |
+| 2026-10-10 | 1–11 | `make lint` | `0 issues.` every task |
+| 2026-10-10 | 11 | `make generate && git diff --exit-code -- '*_templ.go' internal/db/query internal/web/static/css/app.css` | no diff |
+| 2026-10-10 | 11 | `go test -tags live -run Live ./internal/beatleader/ -v` | PASS against live api.beatleader.xyz (owner's profile) |
+| 2026-10-10 | 11 | `go test -race ./internal/app/ -run 'TestBeatLeaderEndToEnd|TestEndToEnd' -v` | PASS |
 
 ### Deviations log
 
@@ -91,11 +101,6 @@ _Notes for next agent:_ The BeatLeader facts this plan relies on were re-verifie
 | 2026-10-10 | 4 | gofumpt reflowed two `s.Log` composite literals in `identities.go` | lint | n/a |
 | 2026-10-10 | 5 | gofumpt line-break reformat of the `s.Log` call in `merge.go` (whitespace only) | lint | n/a |
 | 2026-10-10 | 6 | `chipWhere` renamed to `bestWhere` in `internal/service/groups.go` | gosec G101 flags "pW" inside the identifier | No later task references `chipWhere`; Plan 3 does not either |
-
-### Verification log
-
-| Date | Task | Command(s) | Result |
-|------|------|------------|--------|
 
 ---
 
