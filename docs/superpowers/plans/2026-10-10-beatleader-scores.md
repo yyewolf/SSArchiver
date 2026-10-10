@@ -79,7 +79,7 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 _Current task:_ —
 _Next step:_ Task 11 Step 5 — the manual `make run` check against live BeatLeader (human visual pass; the automated suite, including `TestBeatLeaderEndToEnd` and the `-tags live` smoke test, is green).
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ All 11 tasks implemented and reviewed 2026-10-10 via subagent-driven development; every task review approved, one fix round (Task 5: merge keeps unlocatable replay files). Deviations are all lint/gofumpt-driven except the `chipWhere`→`bestWhere` rename (gosec G101) and the `#nosec G710` on the alias 301 (repo pattern). Plan 3 consumes these names unchanged except `chipWhere`→`bestWhere` (internal to Task 6's `groups.go`, not referenced by Plan 3).
+_Notes for next agent:_ All 11 tasks implemented and reviewed 2026-10-10 via subagent-driven development; every task review approved, one task fix round (Task 5: merge keeps unlocatable replay files), and a final whole-branch review (ready to merge) whose five fixable findings landed in e554b48 (same-second PB supersede tie-break, `/p/{old}/map` follows merge aliases, nil-`Latest` row guard, `sync.templ` injectable clock, legacy-source merge test); two findings deferred with rulings — the `More()` under-count under score-bound filters (plan-mandated formula; fold into Plan 3's filter work) and `ReplayAllowed`'s `%2e%2e` hardening (host allowlist bounds it). Deviations are all lint/gofumpt-driven except the `chipWhere`→`bestWhere` rename (gosec G101) and the `#nosec G710` on the alias 301 (repo pattern). Plan 3 consumes these names unchanged except `chipWhere`→`bestWhere` (internal to Task 6's `groups.go`, not referenced by Plan 3).
 
 ### Verification log
 
@@ -90,6 +90,7 @@ _Notes for next agent:_ All 11 tasks implemented and reviewed 2026-10-10 via sub
 | 2026-10-10 | 11 | `make generate && git diff --exit-code -- '*_templ.go' internal/db/query internal/web/static/css/app.css` | no diff |
 | 2026-10-10 | 11 | `go test -tags live -run Live ./internal/beatleader/ -v` | PASS against live api.beatleader.xyz (owner's profile) |
 | 2026-10-10 | 11 | `go test -race ./internal/app/ -run 'TestBeatLeaderEndToEnd|TestEndToEnd' -v` | PASS |
+| 2026-10-10 | final | `go test -race ./...` + `make lint` at 37350be (final review) and e554b48 (fix wave) | all ok; `0 issues.` |
 
 ### Deviations log
 
