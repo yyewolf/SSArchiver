@@ -38,6 +38,10 @@ const (
 // the only platform name code outside its own package needs (the migration).
 const PlatformScoreSaber = "scoresaber"
 
+// PlatformBeatLeader is the BeatLeader registry's name, needed by code outside
+// its package (the web layer picks its hosted replay viewer for its rows).
+const PlatformBeatLeader = "beatleader"
+
 // Row kinds and end types (spec §4.4). A feed's key in sync_feeds is the row
 // kind it produces.
 const (

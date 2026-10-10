@@ -97,7 +97,9 @@ func TestEmbed(t *testing.T) {
 	if rec.Code != 200 || rec.Header().Get("Content-Security-Policy") != httpx.EmbedCSP {
 		t.Fatalf("code=%d csp=%q", rec.Code, rec.Header().Get("Content-Security-Policy"))
 	}
-	contains(t, rec.Body.String(), "link=https%3A%2F%2Freplays.example.com%2Fr%2F1.bsor")
+	contains(t, rec.Body.String(), "replayURL=https%3A%2F%2Freplays.example.com%2Fr%2F1.dat")
+	bl := e.do(http.MethodGet, "/embed/1?viewer=beatleader&autoplay=1&loop=1", nil)
+	contains(t, bl.Body.String(), "autoplay=true", "loop=true", "link=https%3A%2F%2Freplays.example.com%2Fr%2F1.bsor")
 	arc := e.do(http.MethodGet, "/embed/1?viewer=arcviewer&autoplay=1&loop=1&ui=0", nil)
 	contains(t, arc.Body.String(), "/viewer/?autoPlay=true", "loop=true", "noProxy=true",
 		"replayURL=https%3A%2F%2Freplays.example.com%2Fr%2F1.dat", "uiOff=true")

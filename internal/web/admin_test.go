@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
-	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/storage"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
@@ -124,28 +123,28 @@ func TestViewerSettingsCard(t *testing.T) {
 	e := newEnv(t)
 	c := e.login()
 	ctx := context.Background()
-	contains(t, e.do(http.MethodGet, "/admin/settings", nil, withCookie(c)).Body.String(),
-		"Replay viewer", "Default viewer", `value="beatleader" selected`, `value="arcviewer"`, "Show headset", "Headset color", "Headset opacity")
+	page := e.do(http.MethodGet, "/admin/settings", nil, withCookie(c)).Body.String()
+	contains(t, page, "Replay viewer", "Show headset", "Headset color", "Headset opacity")
+	if strings.Contains(page, "Default viewer") {
+		t.Fatal("the default viewer follows the row's platform; the card must not offer a global choice")
+	}
 
-	bad := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"show_headset": {"on"}, "headset_color": {"ff0080"}, "headset_alpha": {"0.5"}, "default_viewer": {"arcviewer"}}, withCookie(c), htmx("settings-viewer"))
+	bad := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"show_headset": {"on"}, "headset_color": {"ff0080"}, "headset_alpha": {"0.5"}}, withCookie(c), htmx("settings-viewer"))
 	contains(t, bad.Body.String(), `id="settings-viewer"`, "Headset color must be a hex color like #878787")
 
-	badViewer := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"headset_color": {"#878787"}, "headset_alpha": {"1"}, "default_viewer": {"arc"}}, withCookie(c), htmx("settings-viewer"))
-	contains(t, badViewer.Body.String(), `id="settings-viewer"`, "Default viewer must be beatleader or arcviewer")
-
-	badAlpha := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"headset_color": {"#ff0080"}, "headset_alpha": {"2"}, "default_viewer": {"beatleader"}}, withCookie(c), htmx("settings-viewer"))
+	badAlpha := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"headset_color": {"#ff0080"}, "headset_alpha": {"2"}}, withCookie(c), htmx("settings-viewer"))
 	contains(t, badAlpha.Body.String(), `id="settings-viewer"`, "Headset opacity must be between 0 and 1")
 
-	ok := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"show_headset": {"on"}, "headset_color": {"#Ff0080"}, "headset_alpha": {"0.5"}, "default_viewer": {"arcviewer"}}, withCookie(c), htmx("settings-viewer"))
+	ok := e.do(http.MethodPost, "/admin/settings/viewer", url.Values{"show_headset": {"on"}, "headset_color": {"#Ff0080"}, "headset_alpha": {"0.5"}}, withCookie(c), htmx("settings-viewer"))
 	contains(t, ok.Body.String(), "Viewer settings saved")
-	if st, _ := e.svc.Settings(ctx); !st.ViewerShowHeadset || st.ViewerHeadsetColor != "#ff0080" || st.ViewerHeadsetAlpha != 0.5 || st.ReplayViewer != service.ViewerArcViewer {
+	if st, _ := e.svc.Settings(ctx); !st.ViewerShowHeadset || st.ViewerHeadsetColor != "#ff0080" || st.ViewerHeadsetAlpha != 0.5 {
 		t.Fatalf("viewer settings = %+v", st)
 	}
 
 	// Saving general settings must not reset the viewer card.
 	general := e.do(http.MethodPost, "/admin/settings", url.Values{"title": {"Oermer replays"}, "poll_interval": {"15m0s"}}, withCookie(c), htmx("settings-general"))
 	contains(t, general.Body.String(), "Settings saved")
-	if st, _ := e.svc.Settings(ctx); !st.ViewerShowHeadset || st.ViewerHeadsetColor != "#ff0080" || st.ReplayViewer != service.ViewerArcViewer {
+	if st, _ := e.svc.Settings(ctx); !st.ViewerShowHeadset || st.ViewerHeadsetColor != "#ff0080" {
 		t.Fatalf("general save reset viewer settings: %+v", st)
 	}
 }

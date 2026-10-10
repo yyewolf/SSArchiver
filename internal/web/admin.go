@@ -390,7 +390,6 @@ func (h *Handler) saveViewerSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.ViewerShowHeadset = r.PostFormValue("show_headset") == "on"
-	st.ReplayViewer = r.PostFormValue("default_viewer")
 	st.ViewerHeadsetColor = r.PostFormValue("headset_color")
 	if a, err := strconv.ParseFloat(r.PostFormValue("headset_alpha"), 64); err == nil {
 		st.ViewerHeadsetAlpha = a

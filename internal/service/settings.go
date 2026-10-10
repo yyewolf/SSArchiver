@@ -17,7 +17,9 @@ import (
 
 var ErrInvalidSettings = errors.New("invalid settings")
 
-// Replay viewers offered on score pages; the instance default is ReplayViewer.
+// Replay viewers offered on score pages: BeatLeader's hosted viewer for
+// BeatLeader rows (see model.PlatformBeatLeader), the bundled ArcViewer for
+// the rest; score pages let visitors switch between the two.
 const (
 	ViewerBeatLeader = "beatleader"
 	ViewerArcViewer  = "arcviewer"
@@ -28,8 +30,6 @@ type Settings struct {
 	PollInterval  time.Duration
 	WorkerPaused  bool
 
-	ReplayViewer string
-
 	ViewerShowHeadset  bool
 	ViewerHeadsetColor string
 	ViewerHeadsetAlpha float64
@@ -37,7 +37,6 @@ type Settings struct {
 
 var DefaultSettings = Settings{
 	InstanceTitle: "SSArchiver", PollInterval: 10 * time.Minute,
-	ReplayViewer:       ViewerBeatLeader,
 	ViewerHeadsetColor: "#878787", ViewerHeadsetAlpha: 1,
 }
 
@@ -48,8 +47,6 @@ const (
 	keyTitle  = "instance_title"
 	keyPoll   = "poll_interval"
 	keyPaused = "worker_paused"
-
-	keyViewerDefault = "viewer_default"
 
 	keyViewerHeadset      = "viewer_show_headset"
 	keyViewerHeadsetColor = "viewer_headset_color"
@@ -89,10 +86,6 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 			}
 		case keyPaused:
 			st.WorkerPaused, _ = strconv.ParseBool(r.Value)
-		case keyViewerDefault:
-			if slices.Contains([]string{ViewerBeatLeader, ViewerArcViewer}, r.Value) {
-				st.ReplayViewer = r.Value
-			}
 		case keyViewerHeadset:
 			st.ViewerShowHeadset, _ = strconv.ParseBool(r.Value)
 		case keyViewerHeadsetColor:
@@ -143,12 +136,9 @@ func (s *Service) SetWorkerPaused(ctx context.Context, paused bool) error {
 	return nil
 }
 
-// UpdateViewerSettings saves the public viewer preferences: the default
-// replay viewer and the ArcViewer headset rendering (other fields are ignored).
+// UpdateViewerSettings saves the public ArcViewer rendering preferences
+// (other fields of st are ignored).
 func (s *Service) UpdateViewerSettings(ctx context.Context, st Settings) error {
-	if !slices.Contains([]string{ViewerBeatLeader, ViewerArcViewer}, st.ReplayViewer) {
-		return fmt.Errorf("%w: default viewer must be beatleader or arcviewer", ErrInvalidSettings)
-	}
 	r, g, b, ok := ParseHexColor(st.ViewerHeadsetColor)
 	if !ok {
 		return fmt.Errorf("%w: headset color must be a hex color like #878787", ErrInvalidSettings)
@@ -158,7 +148,6 @@ func (s *Service) UpdateViewerSettings(ctx context.Context, st Settings) error {
 	}
 	color := fmt.Sprintf("#%02x%02x%02x", uint8(r*255+0.5), uint8(g*255+0.5), uint8(b*255+0.5))
 	err := s.putSettings(ctx, map[string]string{
-		keyViewerDefault:      st.ReplayViewer,
 		keyViewerHeadset:      strconv.FormatBool(st.ViewerShowHeadset),
 		keyViewerHeadsetColor: color,
 		keyViewerHeadsetAlpha: strconv.FormatFloat(st.ViewerHeadsetAlpha, 'f', -1, 64),

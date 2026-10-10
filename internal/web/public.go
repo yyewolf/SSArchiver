@@ -187,13 +187,9 @@ func (h *Handler) scorePage(w http.ResponseWriter, r *http.Request, sc *model.Sc
 	}
 	ctx := r.Context()
 	base := httpx.BaseURLFrom(ctx)
-	st, serr := h.svc.Settings(ctx)
-	if serr != nil {
-		st = service.DefaultSettings
-	}
 	arcOK, blOK := h.viewer.Available(), views.BeatLeaderPlays(ctx, sc)
 	// ?viewer= remembers the choice in the visitor's cookie; otherwise the
-	// cookie, then the instance default, applies.
+	// cookie, then the row's platform default, applies.
 	viewer := ""
 	if choice := r.URL.Query().Get("viewer"); choice == service.ViewerBeatLeader || choice == service.ViewerArcViewer {
 		h.setViewerCookie(w, r, choice)
@@ -205,7 +201,7 @@ func (h *Handler) scorePage(w http.ResponseWriter, r *http.Request, sc *model.Sc
 		}
 	}
 	if viewer == "" {
-		viewer = pickViewer(st.ReplayViewer, arcOK, blOK)
+		viewer = pickViewer(platformViewer(sc.Platform), arcOK, blOK)
 	}
 	embedPath := views.EmbedPath(ctx, sc)
 	if viewer != "" {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/platform"
-	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
@@ -63,14 +62,15 @@ func TestEmbedViewerChoice(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
 	e.seed()
-	ctx := context.Background()
 
 	rec := e.do(http.MethodGet, "/embed/1", nil)
-	contains(t, rec.Body.String(),
-		`src="https://replay.beatleader.com/?link=https%3A%2F%2Freplays.example.com%2Fr%2F1.bsor"`)
+	if rec.Code != 200 {
+		t.Fatalf("embed = %d", rec.Code)
+	}
 	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-src 'self' https://replay.beatleader.com") {
 		t.Fatalf("embed CSP must allow the BeatLeader viewer: %q", rec.Header().Get("Content-Security-Policy"))
 	}
+	contains(t, rec.Body.String(), "/viewer/?noProxy=true", "replayURL=https%3A%2F%2Freplays.example.com%2Fr%2F1.dat")
 
 	opts := e.do(http.MethodGet, "/embed/1?viewer=beatleader&autoplay=1&loop=1", nil)
 	contains(t, opts.Body.String(),
@@ -80,19 +80,21 @@ func TestEmbedViewerChoice(t *testing.T) {
 	contains(t, arc.Body.String(), "/viewer/?autoPlay=true", "loop=true", "uiOff=true",
 		"replayURL=https%3A%2F%2Freplays.example.com%2Fr%2F1.dat")
 
-	if bad := e.do(http.MethodGet, "/embed/1?viewer=arc", nil); !strings.Contains(bad.Body.String(), "replay.beatleader.com") {
-		t.Fatal("an unknown ?viewer= must fall back to the default viewer")
+	if bad := e.do(http.MethodGet, "/embed/1?viewer=arc", nil); strings.Contains(bad.Body.String(), "replay.beatleader.com") {
+		t.Fatal("an unknown ?viewer= must fall back to the platform default viewer")
 	}
 
-	st, _ := e.svc.Settings(ctx)
-	st.ReplayViewer = service.ViewerArcViewer
-	if err := e.svc.UpdateViewerSettings(ctx, st); err != nil {
-		t.Fatal(err)
+	// BeatLeader rows default to their own viewer.
+	bl := newEnvWith(t, testutil.NewFakePlatformAs("beatleader", "bl", "BeatLeader"))
+	bl.setup()
+	p := testutil.AddPlayer(bl.t, bl.svc, "https://bl.example/u/abc")
+	if _, err := bl.svc.UpsertPlays(ctx(), p, "beatleader", []platform.Play{
+		testutil.FakePlay(model.KindScore, "t1", "lb-a", testutil.T0, true),
+	}); err != nil {
+		bl.t.Fatal(err)
 	}
-	contains(t, e.do(http.MethodGet, "/embed/1", nil).Body.String(),
-		"/viewer/?noProxy=true", "replayURL=https%3A%2F%2Freplays.example.com%2Fr%2F1.dat")
-	contains(t, e.do(http.MethodGet, "/embed/1?viewer=beatleader", nil).Body.String(),
-		"replay.beatleader.com/?link=")
+	testutil.Archive(bl.t, bl.svc, testutil.Row(bl.t, bl.svc, p, "t1"), "BL replay bytes")
+	contains(t, bl.do(http.MethodGet, "/embed/bl/t1", nil).Body.String(), "replay.beatleader.com/?link=")
 }
 
 func TestEmbedViewerWithoutArcBuild(t *testing.T) {
@@ -105,8 +107,9 @@ func TestEmbedViewerWithoutArcBuild(t *testing.T) {
 	contains(t, e.do(http.MethodGet, "/embed/1?viewer=arcviewer", nil).Body.String(), "replay.beatleader.com/?link=")
 }
 
-// Score pages resolve the viewer from ?viewer= (which remembers it in a
-// cookie), then the cookie, then the instance default.
+// The no-choice default viewer follows the row's platform: BeatLeader's
+// hosted viewer for BeatLeader rows, the bundled ArcViewer for the rest.
+// ?viewer= (remembered in a cookie) overrides it.
 
 func TestScorePageViewerChoice(t *testing.T) {
 	e := newEnv(t)
@@ -115,30 +118,43 @@ func TestScorePageViewerChoice(t *testing.T) {
 
 	page := e.do(http.MethodGet, "/s/1", nil)
 	contains(t, page.Body.String(),
-		`src="/embed/1?viewer=beatleader"`, `href="/embed/1?viewer=beatleader"`,
-		`href="?viewer=arcviewer"`,
-		"https://replays.example.com/embed/1?viewer=beatleader")
+		`src="/embed/1?viewer=arcviewer"`, `href="/embed/1?viewer=arcviewer"`,
+		`href="?viewer=beatleader"`,
+		"https://replays.example.com/embed/1?viewer=arcviewer")
 
-	switched := e.do(http.MethodGet, "/s/1?viewer=arcviewer", nil)
-	contains(t, switched.Body.String(), `src="/embed/1?viewer=arcviewer"`, `href="?viewer=beatleader"`)
+	switched := e.do(http.MethodGet, "/s/1?viewer=beatleader", nil)
+	contains(t, switched.Body.String(), `src="/embed/1?viewer=beatleader"`, `href="?viewer=arcviewer"`)
 	var cookie *http.Cookie
 	for _, c := range switched.Result().Cookies() {
 		if c.Name == "ssa_viewer" {
 			cookie = c
 		}
 	}
-	if cookie == nil || cookie.Value != "arcviewer" || cookie.MaxAge < 24*3600 {
+	if cookie == nil || cookie.Value != "beatleader" || cookie.MaxAge < 24*3600 {
 		t.Fatalf("viewer cookie = %v", cookie)
 	}
 
-	recalled := e.do(http.MethodGet, "/s/1", nil, withCookie(&http.Cookie{Name: "ssa_viewer", Value: "arcviewer"}))
-	contains(t, recalled.Body.String(), `src="/embed/1?viewer=arcviewer"`)
+	recalled := e.do(http.MethodGet, "/s/1", nil, withCookie(&http.Cookie{Name: "ssa_viewer", Value: "beatleader"}))
+	contains(t, recalled.Body.String(), `src="/embed/1?viewer=beatleader"`)
 
-	back := e.do(http.MethodGet, "/s/1?viewer=beatleader", nil, withCookie(&http.Cookie{Name: "ssa_viewer", Value: "arcviewer"}))
-	contains(t, back.Body.String(), `src="/embed/1?viewer=beatleader"`)
+	back := e.do(http.MethodGet, "/s/1?viewer=arcviewer", nil, withCookie(&http.Cookie{Name: "ssa_viewer", Value: "beatleader"}))
+	contains(t, back.Body.String(), `src="/embed/1?viewer=arcviewer"`)
 
-	ignored := e.do(http.MethodGet, "/s/1?viewer=nonsense", nil, withCookie(&http.Cookie{Name: "ssa_viewer", Value: "arcviewer"}))
-	contains(t, ignored.Body.String(), `src="/embed/1?viewer=arcviewer"`)
+	ignored := e.do(http.MethodGet, "/s/1?viewer=nonsense", nil, withCookie(&http.Cookie{Name: "ssa_viewer", Value: "beatleader"}))
+	contains(t, ignored.Body.String(), `src="/embed/1?viewer=beatleader"`)
+}
+
+func TestScorePageViewerPlatformDefault(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatformAs("beatleader", "bl", "BeatLeader"))
+	e.setup()
+	p := testutil.AddPlayer(e.t, e.svc, "https://bl.example/u/abc")
+	if _, err := e.svc.UpsertPlays(ctx(), p, "beatleader", []platform.Play{
+		testutil.FakePlay(model.KindScore, "t1", "lb-a", testutil.T0, true),
+	}); err != nil {
+		e.t.Fatal(err)
+	}
+	testutil.Archive(e.t, e.svc, testutil.Row(e.t, e.svc, p, "t1"), "BL replay bytes")
+	contains(t, e.do(http.MethodGet, "/s/bl/t1", nil).Body.String(), `src="/embed/bl/t1?viewer=beatleader"`)
 }
 
 // A row the BeatLeader viewer cannot load (non open-replay platform) falls

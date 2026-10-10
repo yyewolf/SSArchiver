@@ -149,14 +149,24 @@ func pickViewer(v string, arcOK, blOK bool) string {
 	return ""
 }
 
+// platformViewer is the viewer a platform's replays play in by default:
+// BeatLeader's hosted viewer for its own rows, the bundled ArcViewer for the
+// rest (score pages let visitors switch, see pickViewer).
+func platformViewer(name string) string {
+	if name == model.PlatformBeatLeader {
+		return service.ViewerBeatLeader
+	}
+	return service.ViewerArcViewer
+}
+
 // embedViewer resolves the embed page's viewer: an explicit ?viewer= beats the
-// instance default (embeds stay stateless; the score page carries the visitor
-// choice in its iframe URL).
-func (h *Handler) embedViewer(q url.Values, st service.Settings, arcOK, blOK bool) string {
+// row's platform default (embeds stay stateless; the score page carries the
+// visitor choice in its iframe URL).
+func (h *Handler) embedViewer(q url.Values, platform string, arcOK, blOK bool) string {
 	if v := pickViewer(q.Get("viewer"), arcOK, blOK); v != "" {
 		return v
 	}
-	return pickViewer(st.ReplayViewer, arcOK, blOK)
+	return pickViewer(platformViewer(platform), arcOK, blOK)
 }
 
 // embedPage is the iframe-able wrapper around the replay viewers.
@@ -173,7 +183,7 @@ func (h *Handler) embedPage(w http.ResponseWriter, r *http.Request, sc *model.Sc
 		st = service.DefaultSettings
 	}
 	arcOK, blOK := h.viewer.Available(), views.BeatLeaderPlays(ctx, sc)
-	viewer := h.embedViewer(q, st, arcOK, blOK)
+	viewer := h.embedViewer(q, sc.Platform, arcOK, blOK)
 	if viewer == "" {
 		render(w, r, http.StatusNotFound, views.EmbedUnavailable())
 		return
