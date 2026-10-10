@@ -99,6 +99,8 @@ func mapErr(err error) error {
 		return huma.Error404NotFound(err.Error())
 	case errors.Is(err, service.ErrPlayerExists):
 		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, platform.ErrRateLimited):
+		return huma.Error429TooManyRequests(err.Error())
 	}
 	slog.Error("api request failed", "err", err)
 	return huma.Error500InternalServerError("internal error")

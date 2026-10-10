@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 )
 
@@ -42,10 +43,15 @@ func (a *API) registerFeeds() {
 		}
 		if in.Body.Enabled {
 			// A failed probe is recorded on the feed (last_error); the response shows it.
-			if checked, err := a.svc.CheckFeedAccess(ctx, k); checked != nil {
+			// A rate-limited one records nothing, so it answers 429 instead.
+			checked, perr := a.svc.CheckFeedAccess(ctx, k)
+			if errors.Is(perr, platform.ErrRateLimited) {
+				return nil, mapErr(perr)
+			}
+			if checked != nil {
 				f = checked
-			} else if err != nil {
-				return nil, mapErr(err)
+			} else if perr != nil {
+				return nil, mapErr(perr)
 			}
 		}
 		return a.feedOutput(ctx, k, f)
@@ -61,7 +67,7 @@ func (a *API) registerFeeds() {
 			return nil, err
 		}
 		f, err := a.svc.CheckFeedAccess(ctx, k)
-		if f == nil {
+		if f == nil || errors.Is(err, platform.ErrRateLimited) { // a throttled probe verified nothing
 			return nil, mapErr(err)
 		}
 		return a.feedOutput(ctx, k, f)

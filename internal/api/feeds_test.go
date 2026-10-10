@@ -1,10 +1,12 @@
 package api_test
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
@@ -30,6 +32,32 @@ func feedOf(t *testing.T, player map[string]any, platformName, kind string) map[
 	}
 	t.Fatalf("no %s %s feed in %v", platformName, kind, player)
 	return nil
+}
+
+func TestRateLimitedFeedCheck(t *testing.T) {
+	svc, fp, h := newFakeAPI(t, true)
+	tess := testutil.AddPlayer(t, svc, "https://tp.example/u/abc")
+	base := "/api/v1/players/" + tess + "/identities/testplat/feeds/"
+
+	fp.ProbeErr = fmt.Errorf("%w: slow down", platform.ErrRateLimited)
+	if code, _, _ := call(t, h, http.MethodPatch, base+"attempt", map[string]any{"enabled": true}); code != 429 {
+		t.Fatalf("rate-limited enable = %d, want 429", code)
+	}
+	if code, _, _ := call(t, h, http.MethodPost, base+"attempt/check", nil); code != 429 {
+		t.Fatalf("rate-limited check = %d, want 429", code)
+	}
+	fp.ProbeErr = nil
+	_, p, _ := call(t, h, http.MethodGet, "/api/v1/players/"+tess, nil)
+	if af := feedOf(t, p, "testplat", "attempt"); af["access"] != "unknown" || af["access_checked_at"] != nil {
+		t.Fatalf("the switch created the row, the throttled probe recorded nothing: %v", af)
+	}
+
+	fp.Access["attempt/abc"] = model.AccessPrivate
+	code, f, _ := call(t, h, http.MethodPost, base+"attempt/check", nil)
+	hint, _ := f["hint"].(map[string]any)
+	if code != 200 || f["access"] != "private" || hint["title"] != "History is private" {
+		t.Fatalf("check after throttling = %d %v", code, f)
+	}
 }
 
 func TestFeedEndpoints(t *testing.T) {

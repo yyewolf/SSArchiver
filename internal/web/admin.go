@@ -10,6 +10,7 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
@@ -61,6 +62,10 @@ func accessToast(f *model.SyncFeed, okTitle string) (toast.Type, string) {
 	return toast.TypeSuccess, okTitle
 }
 
+// rateLimited says whether an access check was throttled: the platform
+// answered nothing, so the UI must not claim success.
+func rateLimited(err error) bool { return errors.Is(err, platform.ErrRateLimited) }
+
 func feedKey(r *http.Request) service.FeedKey {
 	return service.FeedKey{PlayerID: r.PathValue("id"), Platform: r.PathValue("platform"), Kind: r.PathValue("kind")}
 }
@@ -89,10 +94,14 @@ func (h *Handler) setFeedEnabled(w http.ResponseWriter, r *http.Request) {
 		h.renderRow(w, r, k.PlayerID, toast.TypeSuccess, "Stopped archiving "+name)
 		return
 	}
-	if checked, _ := h.svc.CheckFeedAccess(ctx, k); checked != nil { // a failed probe is recorded on the feed
+	checked, perr := h.svc.CheckFeedAccess(ctx, k)
+	if checked != nil { // a failed probe is recorded on the feed
 		f = checked
 	}
 	t, title := accessToast(f, "Archiving "+name)
+	if rateLimited(perr) { // nothing was verified: the warning wins over the switch
+		t, title = toast.TypeWarning, "Check again later"
+	}
 	h.renderRow(w, r, k.PlayerID, t, title)
 }
 
@@ -108,6 +117,9 @@ func (h *Handler) checkFeedAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, title := accessToast(f, "Access granted")
+	if rateLimited(err) { // nothing was verified: do not claim success
+		t, title = toast.TypeWarning, "Check again later"
+	}
 	if r.URL.Query().Get("from") == "sync" { // the live panel refreshes on its own
 		h.toastOnly(w, r, t, title, f.LastError)
 		return
