@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,8 +26,64 @@ type ScoreFilter struct {
 	Search     string
 	RankedOnly bool
 	State      string // "", FilterWithReplay, FilterArchived
+	Platform   string // "" = every platform
+	MinScore   *int64 // inclusive bounds on modified_score
+	MaxScore   *int64
+	MapKey     string // one map (the merged page's "more plays")
 	Page       int
 	PerPage    int
+}
+
+func (f ScoreFilter) normalized() ScoreFilter {
+	if f.PerPage <= 0 {
+		f.PerPage = 50
+	}
+	f.PerPage = min(f.PerPage, 100)
+	f.Page = max(f.Page, 1)
+	return f
+}
+
+// playsFrom joins every play to its leaderboard; conditions use s and lb.
+const playsFrom = " FROM scores s JOIN leaderboards lb ON lb.id = s.leaderboard_id WHERE "
+
+// where is the per-play condition shared by the row listing and the merged
+// map view: a filter always means the same thing in both.
+func (f ScoreFilter) where() (string, []any) {
+	conds := []string{"1 = 1"}
+	var args []any
+	add := func(cond string, a ...any) {
+		conds = append(conds, cond)
+		args = append(args, a...)
+	}
+	if f.PlayerID != "" {
+		add("s.player_id = ?", f.PlayerID)
+	}
+	if term := likeStripper.Replace(strings.TrimSpace(f.Search)); term != "" {
+		p := "%" + term + "%"
+		add("(lb.song_name LIKE ? OR lb.song_author LIKE ? OR lb.mapper LIKE ?)", p, p, p)
+	}
+	if f.RankedOnly {
+		add("lb.status = ?", "RANKED")
+	}
+	switch f.State {
+	case FilterWithReplay:
+		add("s.has_replay")
+	case FilterArchived:
+		add("s.replay_state = ?", model.ReplayArchived)
+	}
+	if f.Platform != "" {
+		add("s.platform = ?", f.Platform)
+	}
+	if f.MinScore != nil {
+		add("s.modified_score >= ?", *f.MinScore)
+	}
+	if f.MaxScore != nil {
+		add("s.modified_score <= ?", *f.MaxScore)
+	}
+	if f.MapKey != "" {
+		add("lb.map_key = ?", f.MapKey)
+	}
+	return strings.Join(conds, " AND "), args
 }
 
 type ScoreList struct {
@@ -276,43 +333,48 @@ func playRow(playerID, platformName string, id, lbID int64, pl platform.Play) *m
 var likeStripper = strings.NewReplacer("%", "", "_", "")
 
 func (s *Service) ListScores(ctx context.Context, f ScoreFilter) (ScoreList, error) {
-	if f.PerPage <= 0 {
-		f.PerPage = 50
-	}
-	f.PerPage = min(f.PerPage, 100)
-	f.Page = max(f.Page, 1)
-	q, lb := s.q.Score, s.q.Leaderboard
-	filtered := func() query.IScoreDo {
-		do := q.WithContext(ctx).Join(lb, lb.ID.EqCol(q.LeaderboardID))
-		if f.PlayerID != "" {
-			do = do.Where(q.PlayerID.Eq(f.PlayerID))
-		}
-		if term := likeStripper.Replace(strings.TrimSpace(f.Search)); term != "" {
-			p := "%" + term + "%"
-			do = do.Where(q.WithContext(ctx).Where(lb.SongName.Like(p)).Or(lb.SongAuthor.Like(p)).Or(lb.Mapper.Like(p)))
-		}
-		if f.RankedOnly {
-			do = do.Where(lb.Status.Eq("RANKED"))
-		}
-		switch f.State {
-		case FilterWithReplay:
-			do = do.Where(q.HasReplay.Is(true))
-		case FilterArchived:
-			do = do.Where(q.ReplayState.Eq(model.ReplayArchived))
-		}
-		return do
-	}
-	total, err := filtered().Count()
-	if err != nil {
+	f = f.normalized()
+	where, args := f.where()
+	gdb := s.db.WithContext(ctx)
+	var total int64
+	if err := gdb.Raw("SELECT COUNT(*)"+playsFrom+where, args...).Scan(&total).Error; err != nil {
 		return ScoreList{}, fmt.Errorf("service: count scores: %w", err)
 	}
-	items, err := filtered().Select(q.ALL).Preload(q.Leaderboard).
-		Order(q.SetAt.Desc(), q.ID.Desc()).Offset((f.Page - 1) * f.PerPage).Limit(f.PerPage).Find()
-	if err != nil {
+	var ids []int64
+	if err := gdb.Raw("SELECT s.id"+playsFrom+where+" ORDER BY s.set_at DESC, s.id DESC LIMIT ? OFFSET ?",
+		slices.Concat(args, []any{f.PerPage, (f.Page - 1) * f.PerPage})...).Scan(&ids).Error; err != nil {
 		return ScoreList{}, fmt.Errorf("service: list scores: %w", err)
+	}
+	items, err := s.loadScores(ctx, ids)
+	if err != nil {
+		return ScoreList{}, err
 	}
 	pages := int((total + int64(f.PerPage) - 1) / int64(f.PerPage))
 	return ScoreList{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage, Pages: max(pages, 1)}, nil
+}
+
+// loadScores loads rows with their leaderboard, in the order of ids
+// (duplicates allowed).
+func (s *Service) loadScores(ctx context.Context, ids []int64) ([]*model.Score, error) {
+	if len(ids) == 0 {
+		return []*model.Score{}, nil
+	}
+	q := s.q.Score
+	rows, err := q.WithContext(ctx).Preload(q.Leaderboard).Where(q.ID.In(ids...)).Find()
+	if err != nil {
+		return nil, fmt.Errorf("service: load scores: %w", err)
+	}
+	byID := make(map[int64]*model.Score, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	out := make([]*model.Score, 0, len(ids))
+	for _, id := range ids {
+		if r, ok := byID[id]; ok {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) GetScore(ctx context.Context, id int64) (*model.Score, error) {
