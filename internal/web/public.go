@@ -193,6 +193,9 @@ func (h *Handler) scorePage(w http.ResponseWriter, r *http.Request, sc *model.Sc
 	}
 	v.EmbedCode = views.EmbedSnippet(v.EmbedURL)
 	title := fmt.Sprintf("%s by %s", views.SongTitle(sc), views.PlayerName(sc))
+	if sc.Kind == model.KindAttempt {
+		title = fmt.Sprintf("%s · %s attempt by %s", views.SongTitle(sc), views.EndLabel(sc.EndType), views.PlayerName(sc))
+	}
 	p := h.page(r, title)
 	p.OG = &views.OpenGraph{Title: title, Description: views.ScoreSummary(sc), Image: views.CoverURL(sc), URL: base + views.ScoreURL(ctx, sc)}
 	render(w, r, http.StatusOK, views.ScorePage(p, v))

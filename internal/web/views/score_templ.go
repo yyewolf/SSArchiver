@@ -171,7 +171,7 @@ func ScorePage(p Page, v ScoreView) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(PlatformName(ctx, v.Score.Platform))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 42, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 42, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -184,6 +184,10 @@ func ScorePage(p Page, v ScoreView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Err = DifficultyBadge(v.Score).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = EndBadge(v.Score).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -203,7 +207,7 @@ func ScorePage(p Page, v ScoreView) templ.Component {
 					var templ_7745c5c3_Var12 string
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Ranked · %.2f★", v.Score.Leaderboard.Stars))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 47, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 48, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {
@@ -248,9 +252,16 @@ func ScorePage(p Page, v ScoreView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = stat("Rank", "#"+strconv.Itoa(v.Score.Rank)).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if v.Score.Kind == model.KindAttempt {
+				templ_7745c5c3_Err = stat("Ended at", SongTime(v.Score.EndTime)).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = stat("Rank", "#"+strconv.Itoa(v.Score.Rank)).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
 			templ_7745c5c3_Err = stat("Accuracy", Percent(v.Score.Accuracy)).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
@@ -325,7 +336,7 @@ func replaySection(v ScoreView) templ.Component {
 		ctx = templ.ClearChildren(ctx)
 		switch v.Score.ReplayState {
 		case model.ReplayArchived:
-			if v.ViewerAvailable {
+			if v.ViewerAvailable && ViewerPlays(v.Score) {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"aspect-video w-full overflow-hidden rounded-lg border bg-muted\"><iframe src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -333,13 +344,18 @@ func replaySection(v ScoreView) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(EmbedPath(ctx, v.Score))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 81, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 86, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" title=\"Replay viewer\" class=\"size-full border-0\" allow=\"fullscreen; autoplay\" allowfullscreen loading=\"lazy\"></iframe></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else if v.ViewerAvailable {
+				templ_7745c5c3_Err = stateAlert("Viewer unavailable", "The 3D viewer cannot play runs that ended early. You can still download the replay.", false).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -376,7 +392,7 @@ func replaySection(v ScoreView) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("Download " + ReplayExt(ctx, v.Score))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 89, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 96, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -388,7 +404,7 @@ func replaySection(v ScoreView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if v.ViewerAvailable {
+			if v.ViewerAvailable && ViewerPlays(v.Score) {
 				templ_7745c5c3_Var18 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -420,7 +436,7 @@ func replaySection(v ScoreView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if v.ViewerAvailable {
+			if v.ViewerAvailable && ViewerPlays(v.Score) {
 				templ_7745c5c3_Var19 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -529,7 +545,7 @@ func replaySection(v ScoreView) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(HumanBytes(v.Score.ReplaySize))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 115, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 122, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -542,7 +558,7 @@ func replaySection(v ScoreView) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(v.Score.ReplaySHA256)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 115, Col: 131}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 122, Col: 131}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -568,9 +584,16 @@ func replaySection(v ScoreView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		default:
-			templ_7745c5c3_Err = stateAlert("No replay", PlatformName(ctx, v.Score.Platform)+" has no replay for this score.", false).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if v.Score.Kind == model.KindAttempt {
+				templ_7745c5c3_Err = stateAlert("No replay", PlatformName(ctx, v.Score.Platform)+" kept no replay for this attempt.", false).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = stateAlert("No replay", PlatformName(ctx, v.Score.Platform)+" has no replay for this score.", false).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
 		}
 		return nil
@@ -629,7 +652,7 @@ func stateAlert(title, desc string, destructive bool) templ.Component {
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 131, Col: 10}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 142, Col: 10}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -656,7 +679,7 @@ func stateAlert(title, desc string, destructive bool) templ.Component {
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(desc)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 134, Col: 9}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/score.templ`, Line: 145, Col: 9}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {

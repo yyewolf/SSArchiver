@@ -38,10 +38,11 @@ templ ScorePage(p Page, v ScoreView) {
 				<h1 class="text-2xl font-semibold tracking-tight">{ SongTitle(v.Score) }</h1>
 				<p class="text-sm text-muted-foreground">{ SongAuthor(v.Score) } · mapped by { Mapper(v.Score) }</p>
 				<div class="mt-3 flex flex-wrap gap-2">
-					@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
-						{ PlatformName(ctx, v.Score.Platform) }
-					}
-					@DifficultyBadge(v.Score)
+				@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+					{ PlatformName(ctx, v.Score.Platform) }
+				}
+				@DifficultyBadge(v.Score)
+				@EndBadge(v.Score)
 					if v.Score.Leaderboard != nil && v.Score.Leaderboard.Status == "RANKED" {
 						@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
 							{ fmt.Sprintf("Ranked · %.2f★", v.Score.Leaderboard.Stars) }
@@ -57,7 +58,11 @@ templ ScorePage(p Page, v ScoreView) {
 			</div>
 		</div>
 		<dl class="mb-8 grid grid-cols-2 gap-4 rounded-lg border p-4 sm:grid-cols-4">
-			@stat("Rank", "#"+strconv.Itoa(v.Score.Rank))
+			if v.Score.Kind == model.KindAttempt {
+				@stat("Ended at", SongTime(v.Score.EndTime))
+			} else {
+				@stat("Rank", "#"+strconv.Itoa(v.Score.Rank))
+			}
 			@stat("Accuracy", Percent(v.Score.Accuracy))
 			@stat("Score", Number(v.Score.ModifiedScore))
 			@stat("PP", PP(v.Score.PP))
@@ -76,10 +81,12 @@ templ ScorePage(p Page, v ScoreView) {
 templ replaySection(v ScoreView) {
 	switch v.Score.ReplayState {
 		case model.ReplayArchived:
-			if v.ViewerAvailable {
+			if v.ViewerAvailable && ViewerPlays(v.Score) {
 				<div class="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
 					<iframe src={ EmbedPath(ctx, v.Score) } title="Replay viewer" class="size-full border-0" allow="fullscreen; autoplay" allowfullscreen loading="lazy"></iframe>
 				</div>
+			} else if v.ViewerAvailable {
+				@stateAlert("Viewer unavailable", "The 3D viewer cannot play runs that ended early. You can still download the replay.", false)
 			} else {
 				@stateAlert("Viewer unavailable", "The 3D viewer is not bundled with this build. You can still download the replay.", false)
 			}
@@ -88,14 +95,14 @@ templ replaySection(v ScoreView) {
 					@icon.Download()
 					{ "Download " + ReplayExt(ctx, v.Score) }
 				}
-				if v.ViewerAvailable {
+				if v.ViewerAvailable && ViewerPlays(v.Score) {
 					@button.Button(button.Props{Variant: button.VariantOutline, Href: EmbedPath(ctx, v.Score), Target: "_blank"}) {
 						@icon.Play()
 						Open viewer
 					}
 				}
 			</div>
-			if v.ViewerAvailable {
+			if v.ViewerAvailable && ViewerPlays(v.Score) {
 				@field.Field() {
 					@field.Label(field.LabelProps{For: "embed-code"}) {
 						Embed on your site
@@ -120,7 +127,11 @@ templ replaySection(v ScoreView) {
 		case model.ReplayGone:
 			@stateAlert("Replay pruned", PlatformName(ctx, v.Score.Platform)+" pruned this replay before it could be archived.", false)
 		default:
-			@stateAlert("No replay", PlatformName(ctx, v.Score.Platform)+" has no replay for this score.", false)
+			if v.Score.Kind == model.KindAttempt {
+				@stateAlert("No replay", PlatformName(ctx, v.Score.Platform)+" kept no replay for this attempt.", false)
+			} else {
+				@stateAlert("No replay", PlatformName(ctx, v.Score.Platform)+" has no replay for this score.", false)
+			}
 	}
 }
 

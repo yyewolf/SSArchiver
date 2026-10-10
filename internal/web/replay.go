@@ -104,7 +104,7 @@ func (h *Handler) platformEmbed(kind string) http.HandlerFunc {
 // embedPage is the iframe-able wrapper around the same-origin viewer.
 func (h *Handler) embedPage(w http.ResponseWriter, r *http.Request, sc *model.Score, err error) {
 	w.Header().Set("Content-Security-Policy", httpx.EmbedCSP)
-	if err != nil || !h.viewer.Available() || sc.ReplayState != model.ReplayArchived {
+	if err != nil || !h.viewer.Available() || sc.ReplayState != model.ReplayArchived || !views.ViewerPlays(sc) {
 		render(w, r, http.StatusNotFound, views.EmbedUnavailable())
 		return
 	}

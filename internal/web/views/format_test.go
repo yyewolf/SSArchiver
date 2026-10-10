@@ -3,6 +3,8 @@ package views
 import (
 	"testing"
 	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/model"
 )
 
 func TestFormat(t *testing.T) {
@@ -32,5 +34,27 @@ func TestFormat(t *testing.T) {
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
+	}
+}
+
+func TestAttemptText(t *testing.T) {
+	for got, want := range map[string]string{
+		EndLabel(model.EndFail): "Failed", EndLabel(model.EndQuit): "Quit", EndLabel(model.EndRestart): "Restarted",
+		EndLabel(model.EndPractice): "Practice", EndLabel(model.EndClear): "Cleared", EndLabel(model.EndUnknown): "Ended",
+		SongTime(new(59.74)): "0:59", SongTime(new(210.65674)): "3:30", SongTime(nil): "—",
+	} {
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+	a := &model.Score{Kind: model.KindAttempt, EndType: model.EndFail, EndTime: new(59.74), Accuracy: 0.698989}
+	if got := ScoreSummary(a); got != "Failed at 0:59 · 69.90%" {
+		t.Errorf("ScoreSummary(attempt) = %q", got)
+	}
+	if !ViewerPlays(&model.Score{Kind: model.KindScore}) || !ViewerPlays(&model.Score{Kind: model.KindAttempt, EndType: model.EndClear}) {
+		t.Error("scores and clears always play")
+	}
+	if ViewerPlays(a) != AttemptViewer {
+		t.Error("runs that ended early play only when the bundled viewer handles them")
 	}
 }

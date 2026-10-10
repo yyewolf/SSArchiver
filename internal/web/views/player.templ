@@ -86,6 +86,25 @@ func typeSelected(f service.ScoreFilter, t string) bool {
 	return len(f.Types) == 1 && f.Types[0] == t
 }
 
+func endVariant(end string) badge.Variant {
+	switch end {
+	case model.EndFail:
+		return badge.VariantDestructive
+	case model.EndClear:
+		return badge.VariantSecondary
+	}
+	return badge.VariantOutline
+}
+
+// EndBadge says how an attempt ended (nothing for scores).
+templ EndBadge(s *model.Score) {
+	if s.Kind == model.KindAttempt {
+		@badge.Badge(badge.Props{Variant: endVariant(s.EndType)}) {
+			{ EndLabel(s.EndType) }
+		}
+	}
+}
+
 templ PlayerPage(p Page, v PlayerView) {
 	@Layout(p) {
 		<div class="mb-6 flex flex-wrap items-center gap-4">
@@ -129,6 +148,9 @@ templ accounts(v PlayerView) {
 					{ PlatformName(ctx, id.Platform) }
 				}
 				<span class="tabular-nums text-muted-foreground">{ Number(id.Scores().Archived) } / { Number(id.Scores().Replays()) } replays</span>
+				if id.Feed(model.KindAttempt).Enabled {
+					<span class="tabular-nums text-muted-foreground">{ plural(id.Counts[model.KindAttempt].Archived, "attempt") } archived</span>
+				}
 				<a class="underline-offset-4 hover:underline" href={ templ.SafeURL(ProfileURL(ctx, id.Platform, id.ExternalID)) } target="_blank" rel="noopener">{ PlatformName(ctx, id.Platform) } profile</a>
 				<a
 					class="text-muted-foreground hover:text-foreground"
@@ -318,6 +340,7 @@ templ groupRow(v PlayerView, i int, g service.MapGroup) {
 templ PlayChip(s *model.Score) {
 	<a href={ templ.SafeURL(ScoreURL(ctx, s)) } class="inline-flex items-center gap-2 rounded-md border px-2 py-1 text-xs underline-offset-4 hover:underline">
 		<span class="font-medium">{ PlatformName(ctx, s.Platform) }</span>
+		@EndBadge(s)
 		<span class="tabular-nums">{ Percent(s.Accuracy) }</span>
 		<span class="tabular-nums text-muted-foreground">{ Number(s.ModifiedScore) }</span>
 		<span class="tabular-nums text-muted-foreground">#{ strconv.Itoa(s.Rank) }</span>

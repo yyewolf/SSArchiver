@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/yyewolf/ssarchiver/internal/model"
 )
 
 func Number[T ~int | ~int64](n T) string {
@@ -107,4 +109,40 @@ func Initials(name string) string {
 		return "?"
 	}
 	return string(out)
+}
+
+// EndLabel names how an attempt ended.
+func EndLabel(end string) string {
+	switch end {
+	case model.EndClear:
+		return "Cleared"
+	case model.EndFail:
+		return "Failed"
+	case model.EndQuit:
+		return "Quit"
+	case model.EndRestart:
+		return "Restarted"
+	case model.EndPractice:
+		return "Practice"
+	}
+	return "Ended"
+}
+
+// SongTime formats seconds into a song as m:ss.
+func SongTime(sec *float64) string {
+	if sec == nil {
+		return "—"
+	}
+	s := int(*sec)
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
+// AttemptViewer records whether the bundled ArcViewer plays replays of runs
+// that ended early (fail, quit, restart, practice). Checked by hand when
+// attempts were added (Plan 3, Task 7) — see the Verification log.
+const AttemptViewer = true
+
+// ViewerPlays reports whether the embedded viewer can play a row's replay.
+func ViewerPlays(s *model.Score) bool {
+	return s.Kind != model.KindAttempt || s.EndType == model.EndClear || AttemptViewer
 }

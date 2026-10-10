@@ -99,6 +99,9 @@ func CoverURL(s *model.Score) string {
 }
 
 func ScoreSummary(s *model.Score) string {
+	if s.Kind == model.KindAttempt {
+		return EndLabel(s.EndType) + " at " + SongTime(s.EndTime) + " · " + Percent(s.Accuracy)
+	}
 	parts := []string{Percent(s.Accuracy), "#" + strconv.Itoa(s.Rank)}
 	if s.FullCombo {
 		parts = append(parts, "FC")
