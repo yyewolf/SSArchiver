@@ -64,32 +64,42 @@ Status legend: `⬜ todo` · `🟡 in progress` · `✅ done` · `⛔ blocked`
 
 | # | Task | Status | Owner | Started | Commit |
 |---|------|--------|-------|---------|--------|
-| 1 | `internal/platform`: neutral types, registry, IDs, map key | ⬜ todo | | | |
-| 2 | Additive schema + v1 migration (backup, backfill, indexes, verify) | ⬜ todo | | | |
-| 3 | Feeds become the sync source of truth (service, worker, UI, API) | ⬜ todo | | | |
-| 4 | Drop the legacy `players` sync columns | ⬜ todo | | | |
-| 5 | Opaque player IDs | ⬜ todo | | | |
-| 6 | Registry wiring: ScoreSaber adapter, neutral upsert, worker via adapters | ⬜ todo | | | |
-| 7 | Per-platform replay storage + genericity test (fake third platform) | ⬜ todo | | | |
-| 8 | Limiter readiness, multi-limiter status, account links | ⬜ todo | | | |
-| 9 | Upgrade end-to-end test + docs | ⬜ todo | | | |
+| 1 | `internal/platform`: neutral types, registry, IDs, map key | ✅ done | kilo (SDD) | 2026-10-10 | f0f9065 |
+| 2 | Additive schema + v1 migration (backup, backfill, indexes, verify) | ✅ done | kilo (SDD) | 2026-10-10 | 4951a48 |
+| 3 | Feeds become the sync source of truth (service, worker, UI, API) | ✅ done | kilo (SDD) | 2026-10-10 | 84c5f32 |
+| 4 | Drop the legacy `players` sync columns | ✅ done | kilo (SDD) | 2026-10-10 | f301824 |
+| 5 | Opaque player IDs | ✅ done | kilo (SDD) | 2026-10-10 | 4e1f43d |
+| 6 | Registry wiring: ScoreSaber adapter, neutral upsert, worker via adapters | ✅ done | kilo (SDD) | 2026-10-10 | 8ce3201 |
+| 7 | Per-platform replay storage + genericity test (fake third platform) | ✅ done | kilo (SDD) | 2026-10-10 | 29cd9a9 |
+| 8 | Limiter readiness, multi-limiter status, account links | ✅ done | kilo (SDD) | 2026-10-10 | 5d51237 |
+| 9 | Upgrade end-to-end test + docs | ✅ done | kilo (SDD) | 2026-10-10 | 957e052 |
 
 ### Session hand-off
 
-_Current task:_ —
-_Next step:_ Task 1.
+_Current task:_ COMPLETE — all 9 tasks implemented, each task-reviewed, final whole-branch review passed (1 Important fixed in d8a1b49, re-review clean).
+_Next step:_ superpowers:finishing-a-development-branch (integration choice belongs to the human partner).
 _Half-done / uncommitted:_ —
-_Notes for next agent:_ The migration SQL in Task 2/4 was executed against a seeded v1 copy under `foreign_keys=ON` while writing this plan (counts 3/4/2 preserved, FK check empty, cursors carried over, `map_key` normalized). The GORM model set in Task 2 was run through `AutoMigrate` twice on a v1 copy: first run emitted exactly the expected DDL, second run emitted nothing but the no-op `CREATE TABLE IF NOT EXISTS sync_feeds`.
+_Notes for next agent:_ Full execution ledger (rulings, per-task reviews, deferred-minor triage — all 17 minors triaged "ship" by the final review) lives in `.superpowers/sdd/2026-10-10-platform-foundation/progress.md` (git-ignored; the git history is the durable record). Re-open in Plan 2: ResolvePlayer's discarded ParseRef cause (#11), per-platform OG wording beyond primary identity, NextPollAt SQL-side busy filtering if feed counts grow, storage API contexts. A user-requested `Ptr`→`new(expr)` modernization (832f2c7) landed after Task 9. The migration SQL in Task 2/4 was executed against a seeded v1 copy under `foreign_keys=ON` while writing this plan (counts 3/4/2 preserved, FK check empty, cursors carried over, `map_key` normalized). The GORM model set in Task 2 was run through `AutoMigrate` twice on a v1 copy: first run emitted exactly the expected DDL, second run emitted nothing but the no-op `CREATE TABLE IF NOT EXISTS sync_feeds`.
 
 ### Deviations log
 
 | Date | Task | Deviation | Reason | Later tasks updated? |
 |------|------|-----------|--------|----------------------|
+| 2026-10-10 | all | Per-step `- [ ]` checkboxes in task bodies were not ticked during execution | Progress Tracking table, Verification log and Session hand-off were maintained per task instead (they carry the same information with dates and SHAs); mass-ticking 100+ boxes post-hoc adds diff noise, not information | n/a |
 
 ### Verification log
 
 | Date | Task | Command(s) | Result |
 |------|------|------------|--------|
+| 2026-10-10 | 1 | `go test -race ./internal/platform/... ./internal/model/...`; `make lint && go test ./...` | platform ok; 0 issues.; all packages ok |
+| 2026-10-10 | 2 | `go test -race ./internal/db/...`; `go test -race ./...`; `make lint` | db ok; all packages ok; 0 issues. |
+| 2026-10-10 | 3 | `go test -race ./...`; `make lint`; Step 13 leftover-reader grep | all packages ok; 0 issues.; grep empty |
+| 2026-10-10 | 4 | `go test -race ./internal/db/...`; `go test -race ./...`; `make lint` | db ok (columns dropped, rows kept); all packages ok; 0 issues. |
+| 2026-10-10 | 5 | `go test -race ./...`; `make lint` | all 14 packages ok; 0 issues. |
+| 2026-10-10 | 6 | `go test -race ./...`; `make lint` | all 14 packages ok; 0 issues. |
+| 2026-10-10 | 7 | `go test -race ./...`; `make lint` | all 14 packages ok; 0 issues.; TestThirdPlatformEndToEnd green |
+| 2026-10-10 | 8 | `go test -race -count=1 ./...`; `make lint` | all 14 packages ok; 0 issues. |
+| 2026-10-10 | 9 | `go test -race ./internal/app/ -run TestUpgradeFromV1DataDir -v`; `make generate && git diff --exit-code -- ':!docs' && go test -race ./... && make lint` | PASS; no drift; all ok; 0 issues. |
 
 ---
 
