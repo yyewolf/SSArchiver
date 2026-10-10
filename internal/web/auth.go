@@ -142,6 +142,11 @@ func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
+		// An EventSource cannot use a login redirect: answer 401 directly.
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		target := "/login?next=" + url.QueryEscape(r.URL.RequestURI())
 		if isHTMX(r) {
 			w.Header().Set("HX-Redirect", target)

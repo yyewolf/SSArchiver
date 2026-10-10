@@ -50,6 +50,7 @@ type Service struct {
 	q     *query.Query
 	store *storage.Store
 	reg   *platform.Registry
+	hub   *hub
 
 	clockMu sync.RWMutex
 	now     func() time.Time
@@ -60,7 +61,7 @@ type Service struct {
 
 func New(gdb *gorm.DB, store *storage.Store, reg *platform.Registry) *Service {
 	return &Service{
-		db: gdb, q: query.Use(gdb), store: store, reg: reg,
+		db: gdb, q: query.Use(gdb), store: store, reg: reg, hub: newHub(),
 		now:   func() time.Time { return time.Now().UTC() },
 		newID: platform.NewPlayerID,
 		wake:  make(chan struct{}, 1),

@@ -420,6 +420,7 @@ func (s *Service) SetPlayerEnabled(ctx context.Context, id string, enabled bool)
 	if info.RowsAffected == 0 {
 		return fmt.Errorf("%w: player %s", ErrNotFound, id)
 	}
+	s.Publish(Update{PlayerID: id, Kind: model.KindWorker})
 	if enabled {
 		pp := s.q.PlayerPlatform
 		if _, err := pp.WithContext(ctx).Where(pp.PlayerID.Eq(id)).Updates(map[string]any{"enabled": true, "last_error": ""}); err != nil {

@@ -32,7 +32,8 @@ func TestSyncPage(t *testing.T) {
 	}
 	body := e.do(http.MethodGet, "/admin/sync", nil, withCookie(c)).Body.String()
 	contains(t, body, "Running", "Downloading replay 42", "Last hour", "120 / 300", "ScoreSaber reports 200 remaining",
-		"ScoreSaber budget", "Alice", `hx-trigger="every 3s"`, `id="sync-events"`, `id="failed-replays"`)
+		"ScoreSaber budget", "Alice", `hx-trigger="every 30s"`, `sse-swap="sync"`, `id="sync-events"`, `id="failed-replays"`,
+		`hx-ext="sse"`, `sse-connect="/admin/sync/stream"`)
 
 	live := e.do(http.MethodGet, "/admin/sync/live", nil, withCookie(c), htmx("sync-live")).Body.String()
 	if !strings.HasPrefix(strings.TrimSpace(live), `<div id="sync-live"`) || strings.Contains(live, "<html") {

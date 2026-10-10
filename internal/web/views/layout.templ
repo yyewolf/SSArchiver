@@ -33,6 +33,7 @@ templ Layout(p Page) {
 			<link rel="stylesheet" href={ static.URL("css/app.css") }/>
 			<script src={ static.URL("js/theme.js") }></script>
 			<script defer src={ static.URL("js/htmx.min.js") }></script>
+			<script defer src={ static.URL("js/htmx-ext-sse.js") }></script>
 			<script defer src={ static.URL("js/app.js") }></script>
 			@components.Scripts()
 		</head>

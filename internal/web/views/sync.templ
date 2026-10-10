@@ -145,25 +145,27 @@ func FailedURL(page int) string {
 
 templ SyncPage(p Page, v SyncView, ev EventsView, fv FailedView) {
 	@Layout(p) {
-		<div class="mb-8 flex flex-col gap-1">
-			<h1 class="text-2xl font-semibold tracking-tight">Sync</h1>
-			<p class="text-sm text-muted-foreground">What the archiver is doing right now. Refreshes every few seconds.</p>
+		<div hx-ext="sse" sse-connect="/admin/sync/stream">
+			<div class="mb-8 flex flex-col gap-1">
+				<h1 class="text-2xl font-semibold tracking-tight">Sync</h1>
+				<p class="text-sm text-muted-foreground">What the archiver is doing right now. Updates live.</p>
+			</div>
+			@SyncLive(v)
+			<section class="mt-10 flex flex-col gap-4">
+				<h2 class="text-lg font-semibold tracking-tight">Activity</h2>
+				@eventFilters(ev)
+				@EventsTable(ev)
+			</section>
+			<section class="mt-10 flex flex-col gap-4">
+				<h2 class="text-lg font-semibold tracking-tight">Failed replays</h2>
+				@FailedTable(fv)
+			</section>
 		</div>
-		@SyncLive(v)
-		<section class="mt-10 flex flex-col gap-4">
-			<h2 class="text-lg font-semibold tracking-tight">Activity</h2>
-			@eventFilters(ev)
-			@EventsTable(ev)
-		</section>
-		<section class="mt-10 flex flex-col gap-4">
-			<h2 class="text-lg font-semibold tracking-tight">Failed replays</h2>
-			@FailedTable(fv)
-		</section>
 	}
 }
 
 templ SyncLive(v SyncView) {
-	<div id="sync-live" hx-get="/admin/sync/live" hx-trigger="every 3s" hx-swap="outerHTML" class="flex flex-col gap-6">
+	<div id="sync-live" hx-get="/admin/sync/live" hx-trigger="every 30s" sse-swap="sync" hx-swap="outerHTML" class="flex flex-col gap-6">
 		<div class="grid gap-6 lg:grid-cols-2">
 			@workerCard(v)
 			@budgetCard(v)
@@ -485,8 +487,15 @@ templ levelBadge(level string) {
 	}
 }
 
+// unfiltered reports whether the activity table is the stream's view (no
+// active filters, first page): only then does it listen for live updates.
+func (v EventsView) unfiltered() bool {
+	f := v.Filter
+	return f.Level == "" && f.Kind == "" && f.PlayerID == "" && f.Platform == "" && f.Feed == "" && f.Page <= 1
+}
+
 templ EventsTable(ev EventsView) {
-	<div id="sync-events">
+	<div id="sync-events" { sseSwap(ev.unfiltered(), "events")... }>
 		if len(ev.Events) == 0 {
 			<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No events.</p>
 		} else {
@@ -563,7 +572,7 @@ templ EventsTable(ev EventsView) {
 }
 
 templ FailedTable(fv FailedView) {
-	<div id="failed-replays">
+	<div id="failed-replays" sse-swap="failed" hx-swap="outerHTML">
 		if fv.Total == 0 {
 			<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No failed replays.</p>
 		} else {

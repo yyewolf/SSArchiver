@@ -66,18 +66,26 @@ func (h *Handler) eventsView(r *http.Request) (views.EventsView, error) {
 		Level: q.Get("level"), Kind: q.Get("kind"), PlayerID: q.Get("player"),
 		Platform: q.Get("platform"), Feed: q.Get("feed"), Page: max(page, 1), PerPage: 50,
 	}
-	events, total, err := h.svc.ListEvents(r.Context(), f)
+	return h.eventsViewFilter(r.Context(), f)
+}
+
+func (h *Handler) eventsViewFilter(ctx context.Context, f service.EventFilter) (views.EventsView, error) {
+	events, total, err := h.svc.ListEvents(ctx, f)
 	if err != nil {
 		return views.EventsView{}, err
 	}
-	players, err := h.svc.ListPlayers(r.Context(), true)
+	players, err := h.svc.ListPlayers(ctx, true)
 	return views.EventsView{Events: events, Total: total, Filter: f, Players: players, Platforms: h.svc.Platforms().All(), Now: h.svc.Now()}, err
 }
 
 func (h *Handler) failedView(r *http.Request) (views.FailedView, error) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	return h.failedViewPage(r.Context(), page)
+}
+
+func (h *Handler) failedViewPage(ctx context.Context, page int) (views.FailedView, error) {
 	page = max(page, 1)
-	items, total, err := h.svc.ListFailedReplays(r.Context(), page, 50)
+	items, total, err := h.svc.ListFailedReplays(ctx, page, 50)
 	pages := int((total + 49) / 50)
 	return views.FailedView{Items: items, Total: total, Page: page, Pages: max(pages, 1), Now: h.svc.Now()}, err
 }

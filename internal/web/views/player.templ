@@ -107,30 +107,35 @@ templ EndBadge(s *model.Score) {
 
 templ PlayerPage(p Page, v PlayerView) {
 	@Layout(p) {
-		<div class="mb-6 flex flex-wrap items-center gap-4">
-			@avatar.Avatar(avatar.Props{Class: "size-14"}) {
-				@avatar.Image(avatar.ImageProps{Src: v.Player.AvatarURL, Alt: v.Player.Name})
-				@avatar.Fallback() {
-					{ Initials(v.Player.Name) }
+		<div hx-ext="sse" sse-connect={ "/stream?player=" + v.Player.ID }>
+			<div class="mb-6 flex flex-wrap items-center gap-4">
+				@avatar.Avatar(avatar.Props{Class: "size-14"}) {
+					@avatar.Image(avatar.ImageProps{Src: v.Player.AvatarURL, Alt: v.Player.Name})
+					@avatar.Fallback() {
+						{ Initials(v.Player.Name) }
+					}
 				}
-			}
-			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-2xl font-semibold tracking-tight">{ v.Player.Name }</h1>
-				<p class="text-sm text-muted-foreground">{ v.Player.Country }</p>
+				<div class="min-w-0 flex-1">
+					<h1 class="truncate text-2xl font-semibold tracking-tight">{ v.Player.Name }</h1>
+					<p class="text-sm text-muted-foreground">{ v.Player.Country }</p>
+				</div>
+				@PlayerStats(v)
 			</div>
-			<dl class="flex gap-8 text-sm">
-				@stat("Scores", Number(v.Summary.Counts.Scores))
-				@stat("Archived", Number(v.Summary.Counts.Archived))
-				@stat("Pending", Number(v.Summary.Counts.Pending))
-			</dl>
+			@PlayerAccounts(v)
+			@ArchiveProgressRegion(v)
+			@scoreFilters(v)
+			@ScoreTable(v)
 		</div>
-		@accounts(v)
-		if len(v.listing()) > 0 || v.Summary.Counts.Pending > 0 {
-			@archiveProgress(v)
-		}
-		@scoreFilters(v)
-		@ScoreTable(v)
 	}
+}
+
+// PlayerStats is the header's live stat list.
+templ PlayerStats(v PlayerView) {
+	<dl id="player-stats" sse-swap="stats" hx-swap="outerHTML" class="flex gap-8 text-sm">
+		@stat("Scores", Number(v.Summary.Counts.Scores))
+		@stat("Archived", Number(v.Summary.Counts.Archived))
+		@stat("Pending", Number(v.Summary.Counts.Pending))
+	</dl>
 }
 
 templ stat(label, value string) {
@@ -140,8 +145,9 @@ templ stat(label, value string) {
 	</div>
 }
 
-templ accounts(v PlayerView) {
-	<ul class="mb-6 flex flex-wrap gap-2 text-sm">
+// PlayerAccounts is the header's live list of linked accounts.
+templ PlayerAccounts(v PlayerView) {
+	<ul id="player-accounts" sse-swap="accounts" hx-swap="outerHTML" class="mb-6 flex flex-wrap gap-2 text-sm">
 		for _, id := range v.Summary.Identities {
 			<li class="flex items-center gap-2 rounded-lg border px-3 py-1.5">
 				@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
@@ -163,6 +169,22 @@ templ accounts(v PlayerView) {
 			</li>
 		}
 	</ul>
+}
+
+// ArchiveProgressRegion is the persistent live region holding the progress
+// block; the streamed content is empty once there is nothing left to archive.
+templ ArchiveProgressRegion(v PlayerView) {
+	<div id="archive-progress" sse-swap="progress">
+		@ArchiveProgressContent(v)
+	</div>
+}
+
+// ArchiveProgressContent is the region's inner content (nothing when the
+// player has no backfill running and no pending replays).
+templ ArchiveProgressContent(v PlayerView) {
+	if len(v.listing()) > 0 || v.Summary.Counts.Pending > 0 {
+		@archiveProgress(v)
+	}
 }
 
 templ archiveProgress(v PlayerView) {

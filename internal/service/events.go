@@ -33,6 +33,13 @@ func (s *Service) Log(ctx context.Context, e model.SyncEvent) {
 	if err := s.q.SyncEvent.WithContext(ctx).Create(&e); err != nil {
 		slog.Warn("sync event not stored", "err", err)
 	}
+	// Every user-visible change funnels through Log, so it is the one place
+	// the live UI learns that counters or feeds moved.
+	var player string
+	if e.PlayerID != nil {
+		player = *e.PlayerID
+	}
+	s.Publish(Update{PlayerID: player, Kind: e.Kind})
 }
 
 const (

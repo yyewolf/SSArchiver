@@ -138,6 +138,12 @@ func (s *Service) RetryFailed(ctx context.Context, playerID string, scoreID int6
 	}
 	if info.RowsAffected > 0 {
 		s.Wake()
+		// RetryFailed touches no log event, so the live UI is told directly.
+		if playerID != "" {
+			s.Publish(Update{PlayerID: playerID, Kind: model.KindReplay})
+		} else {
+			s.Publish(Update{Kind: model.KindReplay})
+		}
 	}
 	return info.RowsAffected, nil
 }

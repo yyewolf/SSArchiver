@@ -10,40 +10,49 @@ import (
 
 templ Home(p Page, players []service.PlayerSummary) {
 	@Layout(p) {
-		<div class="mb-8 flex flex-col gap-1">
-			<h1 class="text-2xl font-semibold tracking-tight">Players</h1>
-			<p class="text-sm text-muted-foreground">Archived ScoreSaber replays, free to download, watch and embed.</p>
-		</div>
-		if len(players) == 0 {
-			@empty.Empty(empty.Props{Class: "border border-dashed"}) {
-				@empty.Header() {
-					@empty.Title() {
-						No players yet
+		<div hx-ext="sse" sse-connect="/stream">
+			<div class="mb-8 flex flex-col gap-1">
+				<h1 class="text-2xl font-semibold tracking-tight">Players</h1>
+				<p class="text-sm text-muted-foreground">Archived ScoreSaber replays, free to download, watch and embed.</p>
+			</div>
+			if len(players) == 0 {
+				@empty.Empty(empty.Props{Class: "border border-dashed"}) {
+					@empty.Header() {
+						@empty.Title() {
+							No players yet
+						}
+						@empty.Description() {
+							Players added by the admin will show up here.
+						}
 					}
-					@empty.Description() {
-						Players added by the admin will show up here.
-					}
-				}
-				if p.User != nil {
-					@empty.Content() {
-						@button.Button(button.Props{Href: "/admin"}) {
-							Add a player
+					if p.User != nil {
+						@empty.Content() {
+							@button.Button(button.Props{Href: "/admin"}) {
+								Add a player
+							}
 						}
 					}
 				}
+			} else {
+				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					for _, pl := range players {
+						@PlayerCard(pl)
+					}
+				</div>
 			}
-		} else {
-			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-				for _, pl := range players {
-					@playerCard(pl)
-				}
-			</div>
-		}
+		</div>
 	}
 }
 
-templ playerCard(pl service.PlayerSummary) {
-	<a href={ templ.SafeURL("/p/" + pl.ID) } class="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
+// PlayerCard is one home-page card; it refreshes itself from the SSE stream.
+templ PlayerCard(pl service.PlayerSummary) {
+	<a
+		id={ "player-" + pl.ID }
+		sse-swap={ "card/" + pl.ID }
+		hx-swap="outerHTML"
+		href={ templ.SafeURL("/p/" + pl.ID) }
+		class="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+	>
 		@card.Card(card.Props{Class: "transition-colors group-hover:bg-muted/50"}) {
 			@card.Header() {
 				<div class="flex items-center gap-3">

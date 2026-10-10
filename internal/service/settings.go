@@ -124,6 +124,7 @@ func (s *Service) SetWorkerPaused(ctx context.Context, paused bool) error {
 		return fmt.Errorf("service: save pause: %w", err)
 	}
 	s.Wake()
+	s.Publish(Update{Kind: model.KindWorker})
 	return nil
 }
 
