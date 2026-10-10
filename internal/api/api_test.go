@@ -184,6 +184,8 @@ func TestAdminRequiresSession(t *testing.T) {
 		{http.MethodPost, "/api/v1/players/1001/identities"},
 		{http.MethodPatch, "/api/v1/players/1001/identities/scoresaber"},
 		{http.MethodDelete, "/api/v1/players/1001/identities/scoresaber"},
+		{http.MethodPatch, "/api/v1/players/1001/identities/scoresaber/feeds/attempt"},
+		{http.MethodPost, "/api/v1/players/1001/identities/scoresaber/feeds/attempt/check"},
 		{http.MethodPost, "/api/v1/players/1001/merge"},
 		{http.MethodGet, "/api/v1/sync"},
 		{http.MethodPost, "/api/v1/sync/pause"},
@@ -248,7 +250,7 @@ func TestOpenAPIDocument(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	body := rec.Body.String()
-	for _, want := range []string{`"list-players"`, `"add-player"`, `"session"`, `"ssa_session"`, `"link-identity"`, `"merge-player"`, `"get-play"`, `"min_score"`} {
+	for _, want := range []string{`"list-players"`, `"add-player"`, `"session"`, `"ssa_session"`, `"link-identity"`, `"merge-player"`, `"update-feed"`, `"check-feed"`, `"get-play"`, `"min_score"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("openapi missing %s", want)
 		}

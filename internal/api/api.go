@@ -45,6 +45,7 @@ func Register(mux *http.ServeMux, svc *service.Service, status StatusSource, ver
 	a.api = humago.New(inner, cfg)
 	a.registerPlayers()
 	a.registerIdentities()
+	a.registerFeeds()
 	a.registerScores()
 	a.registerSync()
 	mux.Handle("/api/", httpx.CORSReads("/api/v1/sync")(inner))
@@ -91,6 +92,8 @@ func mapErr(err error) error {
 	case errors.Is(err, service.ErrMergeConflict):
 		return problem(http.StatusConflict, "merge_platform_conflict", err.Error())
 	case errors.Is(err, service.ErrMergeSelf), errors.Is(err, service.ErrInvalidPlayerRef):
+		return huma.Error422UnprocessableEntity(err.Error())
+	case errors.Is(err, service.ErrFeedNotOptional):
 		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		return huma.Error404NotFound(err.Error())

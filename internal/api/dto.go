@@ -27,14 +27,51 @@ type Backfill struct {
 	TotalPages int    `json:"total_pages"`
 }
 
+// Hint is what a player must do to grant access to a feed (spec §6.3).
+type Hint struct {
+	Title    string   `json:"title"`
+	Intro    string   `json:"intro,omitempty"`
+	Steps    []string `json:"steps"`
+	LinkText string   `json:"link_text,omitempty"`
+	LinkURL  string   `json:"link_url,omitempty"`
+	Note     string   `json:"note,omitempty"`
+}
+
 type Feed struct {
-	Kind         string     `json:"kind" enum:"score,attempt"`
-	Enabled      bool       `json:"enabled"`
-	Access       string     `json:"access" enum:"n/a,unknown,public,private"`
-	StartedAt    time.Time  `json:"started_at"`
-	LastPolledAt *time.Time `json:"last_polled_at,omitempty"`
-	LastError    string     `json:"last_error,omitempty"`
-	Backfill     Backfill   `json:"backfill"`
+	Kind            string       `json:"kind" enum:"score,attempt"`
+	Optional        bool         `json:"optional" doc:"Switched on and off by the admin (PATCH …/feeds/{kind})"`
+	Enabled         bool         `json:"enabled"`
+	Access          string       `json:"access" enum:"n/a,unknown,public,private"`
+	AccessCheckedAt *time.Time   `json:"access_checked_at,omitempty"`
+	Hint            *Hint        `json:"hint,omitempty" doc:"What the player must change; only while access is private"`
+	RemoteTotal     int64        `json:"remote_total" doc:"Items the platform reported at the last access check"`
+	StartedAt       time.Time    `json:"started_at"`
+	LastPolledAt    *time.Time   `json:"last_polled_at,omitempty"`
+	LastError       string       `json:"last_error,omitempty"`
+	Backfill        Backfill     `json:"backfill"`
+	Counts          ReplayCounts `json:"counts" doc:"This feed's rows"`
+}
+
+func hintDTO(h *platform.Hint) *Hint {
+	if h == nil {
+		return nil
+	}
+	return &Hint{Title: h.Title, Intro: h.Intro, Steps: h.Steps, LinkText: h.LinkText, LinkURL: h.LinkURL, Note: h.Note}
+}
+
+// feedDTO describes one feed of an account of platform p.
+func feedDTO(p platform.Platform, f model.SyncFeed, c service.Counts) Feed {
+	spec, _ := p.Feed(f.Feed)
+	out := Feed{
+		Kind: f.Feed, Optional: spec.Optional, Enabled: f.Enabled, Access: f.Access, AccessCheckedAt: f.AccessCheckedAt,
+		RemoteTotal: f.RemoteTotal, StartedAt: f.StartedAt, LastPolledAt: f.LastPolledAt, LastError: f.LastError,
+		Backfill: Backfill{State: f.BackfillState, NextPage: f.BackfillPage, TotalPages: f.BackfillTotalPages},
+		Counts:   replayCounts(c),
+	}
+	if f.Access == model.AccessPrivate {
+		out.Hint = hintDTO(spec.AccessHint)
+	}
+	return out
 }
 
 type Identity struct {
@@ -140,14 +177,12 @@ func playerDTO(base string, reg *platform.Registry, p service.PlayerSummary) Pla
 	}
 	for _, id := range p.Identities {
 		dto := Identity{Platform: id.Platform, ID: id.ExternalID, Enabled: id.Enabled, LinkedAt: id.LinkedAt, LastError: id.LastError, Feeds: make([]Feed, 0, len(id.Feeds)), Counts: replayCounts(id.Scores())}
-		if pl, ok := reg.Get(id.Platform); ok {
+		pl, _ := reg.Get(id.Platform)
+		if pl.ProfileURL != nil {
 			dto.ProfileURL = pl.ProfileURL(id.ExternalID)
 		}
 		for _, f := range id.Feeds {
-			dto.Feeds = append(dto.Feeds, Feed{
-				Kind: f.Feed, Enabled: f.Enabled, Access: f.Access, StartedAt: f.StartedAt, LastPolledAt: f.LastPolledAt, LastError: f.LastError,
-				Backfill: Backfill{State: f.BackfillState, NextPage: f.BackfillPage, TotalPages: f.BackfillTotalPages},
-			})
+			dto.Feeds = append(dto.Feeds, feedDTO(pl, f, id.Counts[f.Feed]))
 		}
 		out.Identities = append(out.Identities, dto)
 	}
