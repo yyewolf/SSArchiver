@@ -74,6 +74,29 @@ BeatLeader is paced client-side at 40 API requests and 20 replay-CDN requests pe
 10 seconds (its documented limit is 50); these limits are not configurable.
 `SSA_HOURLY_BUDGET` only applies to ScoreSaber.
 
+### BeatLeader attempts
+
+BeatLeader also records attempts: failed, quit, restarted and practice runs, and
+clears that did not beat the personal best, each with its own replay. They are
+archived per account, on request: on **Manage**, open a player's BeatLeader
+badge → **Archive attempts**.
+
+- BeatLeader only shares attempts when the player's history is public. The
+  player signs in on beatleader.com, opens **Settings → Scores**, turns on
+  **Public history (auto-synced)**, then reloads the page and checks the switch
+  stayed on (BeatLeader can show it on even when saving failed). Until then,
+  **Manage** and **Sync** show these steps with a **Check again** button, and
+  SSArchiver re-checks every 24 hours by itself.
+- A history can be tens of thousands of runs and several GB of replays.
+  Attempts are fetched after all score work, so they never delay score
+  archiving.
+- BeatLeader drops old attempt replays over time: the sooner attempts are
+  switched on, the more can be saved.
+- Attempts have their own pages (`/s/bl/attempt/<id>`), raw files
+  (`/r/bl/attempt/<id>.bsor`) and embeds. The player page and the API list them
+  with the `type` filter: `complete` (default: scores and cleared attempts),
+  `fail`, `quit`, `restart`, `practice`, `all`.
+
 ## Configuration
 
 | Variable | Flag | Default | Meaning |
@@ -119,6 +142,14 @@ fetches one score by its platform ID. Accounts are managed with
 (`identity_linked_elsewhere`, `platform_already_linked`, `last_identity`,
 `merge_platform_conflict`). A merged-away player ID keeps resolving to the
 survivor.
+
+Players' `identities[].feeds[]` report `optional`, `access`
+(`n/a`, `unknown`, `public`, `private`), `remote_total`, per-feed `counts`, and a
+`hint` while access is private. Optional feeds are switched with
+`PATCH /api/v1/players/{id}/identities/{platform}/feeds/{kind}` (`{"enabled":
+true}`; switching on checks access at once) and re-checked with
+`POST …/feeds/{kind}/check`. `GET /api/v1/players/{id}/scores?type=fail,quit`
+lists attempts; scores carry `kind`, `end_type` and `end_time`.
 
 ## Admin password reset
 
