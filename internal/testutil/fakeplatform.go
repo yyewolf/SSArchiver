@@ -24,15 +24,20 @@ type FakePlatform struct {
 	Replays  map[string][]byte          // replay URL → bytes
 	Calls    []string                   // "kind:account:page"
 	Limiter  *FakeLimiter
+	PBOnly   bool // registry PBOnly; set before calling Platform()
+	Refused  int  // reported as PlayPage.Refused on every page
 }
 
 func NewFakePlatform() *FakePlatform {
 	return &FakePlatform{
-		PerPage:  2,
-		Profiles: map[string]platform.Profile{"abc": {ExternalID: "abc", Name: "Tess", Country: "SE", AvatarURL: "https://img.tp.example/abc.png"}},
-		plays:    map[string][]platform.Play{},
-		Replays:  map[string][]byte{},
-		Limiter:  &FakeLimiter{},
+		PerPage: 2,
+		Profiles: map[string]platform.Profile{
+			"abc": {ExternalID: "abc", Name: "Tess", Country: "SE", AvatarURL: "https://img.tp.example/abc.png"},
+			"def": {ExternalID: "def", Name: "Dee", Country: "NO", AvatarURL: "https://img.tp.example/def.png"},
+		},
+		plays:   map[string][]platform.Play{},
+		Replays: map[string][]byte{},
+		Limiter: &FakeLimiter{},
 	}
 }
 
@@ -45,6 +50,7 @@ var (
 func (f *FakePlatform) Platform() platform.Platform {
 	return platform.Platform{
 		Name: "testplat", Slug: "tp", DisplayName: "TestPlat", Priority: 50, ReplayExt: ".tpr",
+		PBOnly:     f.PBOnly,
 		ImageHosts: []string{"https://img.tp.example"},
 		ProfileURL: func(id string) string { return "https://tp.example/u/" + id },
 		ParseURL: func(in string) (string, bool) {
@@ -98,7 +104,7 @@ func (f *FakePlatform) FeedPage(_ context.Context, kind, account string, page in
 	if start := (page - 1) * f.PerPage; start < len(all) {
 		out = all[start:min(start+f.PerPage, len(all))]
 	}
-	return platform.PlayPage{Plays: out, TotalPages: total}, nil
+	return platform.PlayPage{Plays: out, TotalPages: total, Refused: f.Refused}, nil
 }
 
 func (f *FakePlatform) ProbeAccess(context.Context, string, string) (string, int64, error) {

@@ -18,7 +18,7 @@ const (
 	FilterArchived   = "archived"
 )
 
-type UpsertResult struct{ New, Known, NewReplays int }
+type UpsertResult struct{ New, Known, NewReplays, URLChanged int }
 
 type ScoreFilter struct {
 	PlayerID   string
@@ -84,6 +84,11 @@ func (s *Service) UpsertPlays(ctx context.Context, playerID, platformName string
 		if len(fresh) > 0 {
 			if err := tx.Score.WithContext(ctx).CreateInBatches(fresh, 100); err != nil {
 				return fmt.Errorf("insert scores: %w", err)
+			}
+		}
+		if p.PBOnly {
+			if err := supersede(ctx, tx, fresh); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -213,6 +218,24 @@ func existingPlays(ctx context.Context, tx *query.Query, platformName string, pl
 	return out, nil
 }
 
+// supersede clears personal_best on a player's older scores of the same
+// leaderboard when a PB-only platform lists a new score there (spec §4.6).
+func supersede(ctx context.Context, tx *query.Query, fresh []*model.Score) error {
+	q := tx.Score
+	for _, r := range fresh {
+		if r.Kind != model.KindScore {
+			continue
+		}
+		if _, err := q.WithContext(ctx).Where(
+			q.PlayerID.Eq(r.PlayerID), q.Platform.Eq(r.Platform), q.Kind.Eq(model.KindScore),
+			q.LeaderboardID.Eq(r.LeaderboardID), q.ID.Neq(r.ID), q.SetAt.Lt(r.SetAt), q.PersonalBest.Is(true),
+		).Update(q.PersonalBest, false); err != nil {
+			return fmt.Errorf("supersede scores: %w", err)
+		}
+	}
+	return nil
+}
+
 func refreshPlay(ctx context.Context, tx *query.Query, old *model.Score, pl platform.Play, res *UpsertResult) error {
 	upd := map[string]any{"rank": pl.Rank, "pp": pl.PP, "personal_best": pl.PersonalBest, "has_replay": pl.HasReplay || old.HasReplay}
 	if pl.HasReplay && old.ReplayState == model.ReplayNone {
@@ -221,6 +244,9 @@ func refreshPlay(ctx context.Context, tx *query.Query, old *model.Score, pl plat
 	}
 	if pl.ReplayURL != "" && old.ReplayState != model.ReplayArchived {
 		upd["replay_url"] = pl.ReplayURL
+	}
+	if pl.ReplayURL != "" && old.ReplayState == model.ReplayArchived && old.ReplayURL != nil && *old.ReplayURL != pl.ReplayURL {
+		res.URLChanged++ // the archive is never replaced (spec §5.4); the worker logs it
 	}
 	if _, err := tx.Score.WithContext(ctx).Where(tx.Score.ID.Eq(old.ID)).Updates(upd); err != nil {
 		return fmt.Errorf("update score %d: %w", old.ID, err)

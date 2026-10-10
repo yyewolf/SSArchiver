@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -88,4 +89,51 @@ func Upsert(t testing.TB, svc *service.Service, playerID string, items ...scores
 		t.Fatal(err)
 	}
 	return res
+}
+
+// NewMultiService is NewService with the fake third platform ("testplat",
+// slug "tp") registered next to ScoreSaber.
+func NewMultiService(t testing.TB) (*service.Service, *FakePlatform, *Clock) {
+	t.Helper()
+	fp := NewFakePlatform()
+	svc, _, clk := NewServiceWith(t, scoresaber.NewPlatform(&Resolver{Players: DefaultPlayers()}, nil), fp.Platform())
+	return svc, fp, clk
+}
+
+// UpsertFake stores testplat plays for a player.
+func UpsertFake(t testing.TB, svc *service.Service, playerID string, plays ...platform.Play) service.UpsertResult {
+	t.Helper()
+	res, err := svc.UpsertPlays(context.Background(), playerID, "testplat", plays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// Row returns a player's row by its platform ID (any platform and kind).
+func Row(t testing.TB, svc *service.Service, playerID, externalID string) *model.Score {
+	t.Helper()
+	list, err := svc.ListScores(context.Background(), service.ScoreFilter{PlayerID: playerID, PerPage: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sc := range list.Items {
+		if sc.ExternalID == externalID {
+			return sc
+		}
+	}
+	t.Fatalf("player %s has no row %s", playerID, externalID)
+	return nil
+}
+
+// Archive stores body as the row's replay file and marks the row archived.
+func Archive(t testing.TB, svc *service.Service, sc *model.Score, body string) {
+	t.Helper()
+	size, sum, err := svc.PutReplay(sc, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MarkReplayArchived(context.Background(), sc.ID, size, sum); err != nil {
+		t.Fatal(err)
+	}
 }

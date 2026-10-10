@@ -198,3 +198,56 @@ func TestUpsertPlaysAllocatesInternalIDs(t *testing.T) {
 		t.Fatalf("legacy score = %+v %v", sc, err)
 	}
 }
+
+func TestUpsertPBOnlySupersedesOlderScores(t *testing.T) {
+	fp := testutil.NewFakePlatform()
+	fp.PBOnly = true
+	svc, _, _ := testutil.NewServiceWith(t, scoresaber.NewPlatform(&testutil.Resolver{Players: testutil.DefaultPlayers()}, nil), fp.Platform())
+	ctx := context.Background()
+	tess := mustAdd(t, svc, "https://tp.example/u/abc")
+	other := testutil.FakePlay(model.KindScore, "s2", "lb-b", testutil.T0.Add(-90*time.Minute), false)
+	testutil.UpsertFake(t, svc, tess, testutil.FakePlay(model.KindScore, "s1", "lb-a", testutil.T0.Add(-2*time.Hour), true), other)
+	testutil.Archive(t, svc, testutil.Row(t, svc, tess, "s1"), "old pb")
+	// The platform improved lb-a: its listing now shows s3 instead of s1.
+	res := testutil.UpsertFake(t, svc, tess, testutil.FakePlay(model.KindScore, "s3", "lb-a", testutil.T0.Add(-time.Hour), true), other)
+	if res.New != 1 || res.Known != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+	s1, s2, s3 := testutil.Row(t, svc, tess, "s1"), testutil.Row(t, svc, tess, "s2"), testutil.Row(t, svc, tess, "s3")
+	if s1.PersonalBest || !s2.PersonalBest || !s3.PersonalBest {
+		t.Fatalf("pb flags: s1=%v s2=%v s3=%v", s1.PersonalBest, s2.PersonalBest, s3.PersonalBest)
+	}
+	if s1.ReplayState != model.ReplayArchived {
+		t.Fatal("the superseded score keeps its archived replay")
+	}
+
+	// A platform that is not PB-only keeps the flag it reports.
+	alice := mustAdd(t, svc, "1001")
+	testutil.Upsert(t, svc, alice, testutil.Item("1001", 1, 501, testutil.T0.Add(-2*time.Hour), true))
+	testutil.Upsert(t, svc, alice, testutil.Item("1001", 2, 501, testutil.T0.Add(-time.Hour), true))
+	if sc, _ := svc.GetScore(ctx, 1); !sc.PersonalBest {
+		t.Fatal("ScoreSaber rows must not be superseded")
+	}
+}
+
+func TestUpsertKeepsArchivedReplayURL(t *testing.T) {
+	svc, _, _ := testutil.NewMultiService(t)
+	tess := mustAdd(t, svc, "https://tp.example/u/abc")
+	archived := testutil.FakePlay(model.KindScore, "s1", "lb-a", testutil.T0, true)
+	pending := testutil.FakePlay(model.KindScore, "s2", "lb-b", testutil.T0, true)
+	testutil.UpsertFake(t, svc, tess, archived, pending)
+	testutil.Archive(t, svc, testutil.Row(t, svc, tess, "s1"), "first")
+
+	archived.ReplayURL = "https://tp.example/replays/moved1.tpr"
+	pending.ReplayURL = "https://tp.example/replays/moved2.tpr"
+	res := testutil.UpsertFake(t, svc, tess, archived, pending)
+	if res.Known != 2 || res.URLChanged != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+	if sc := testutil.Row(t, svc, tess, "s1"); *sc.ReplayURL != "https://tp.example/replays/s1.tpr" || sc.ReplayState != model.ReplayArchived {
+		t.Fatalf("archived row must keep its URL: %+v", sc)
+	}
+	if sc := testutil.Row(t, svc, tess, "s2"); *sc.ReplayURL != "https://tp.example/replays/moved2.tpr" {
+		t.Fatalf("a pending row follows the new URL: %v", *sc.ReplayURL)
+	}
+}

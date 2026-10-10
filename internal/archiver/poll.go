@@ -21,20 +21,24 @@ func feedEvent(wf *service.WorkFeed, level, kind, msg string) model.SyncEvent {
 func (w *Worker) poll(ctx context.Context, wf *service.WorkFeed) error {
 	w.setStatus(StateRunning, "Polling "+wf.PlayerName)
 	k := wf.Key()
-	var newScores, newReplays, pagesRead, totalPages int
+	p, err := w.platform(wf.Platform)
+	if err != nil {
+		return err
+	}
+	var newScores, newReplays, pagesRead, totalPages, refused, urlChanged int
 	reachedEnd := false
 	for page := 1; page <= MaxPollPages; page++ {
-		p, err := w.platform(wf.Platform)
-		if err != nil {
-			return err
-		}
 		pg, err := p.Adapter.FeedPage(ctx, wf.Feed, wf.ExternalID, page)
 		if err != nil {
 			return w.clientError(ctx, p, wf, err, true)
 		}
 		pagesRead, totalPages = page, pg.TotalPages
-		if page == 1 && len(pg.Plays) > 0 && pg.Plays[0].Profile != nil {
-			if err := w.svc.RefreshProfile(ctx, wf.PlayerID, wf.Platform, *pg.Plays[0].Profile); err != nil {
+		if page == 1 && wf.Feed == model.KindScore {
+			prof, err := w.profile(ctx, p, wf, pg)
+			if err != nil {
+				return w.clientError(ctx, p, wf, err, true)
+			}
+			if err := w.svc.RefreshProfile(ctx, wf.PlayerID, wf.Platform, prof); err != nil {
 				return err
 			}
 		}
@@ -44,11 +48,14 @@ func (w *Worker) poll(ctx context.Context, wf *service.WorkFeed) error {
 		}
 		newScores += res.New
 		newReplays += res.NewReplays
+		refused += pg.Refused
+		urlChanged += res.URLChanged
 		if res.Known > 0 || len(pg.Plays) == 0 || page >= pg.TotalPages {
 			reachedEnd = true
 			break
 		}
 	}
+	w.logPageNotes(ctx, p, wf, refused, urlChanged)
 	switch {
 	case wf.BackfillState == model.BackfillPending && wf.BackfillPage <= 1:
 		if reachedEnd {
@@ -81,6 +88,31 @@ func noun(kind string) string {
 	return kind + "s"
 }
 
+// profile is the account's display profile for the page-1 refresh: the one a
+// play carries, else Resolve — for platforms whose listings omit it, which is
+// also how a vanished player is noticed there (spec §5.1, §5.2).
+func (w *Worker) profile(ctx context.Context, p platform.Platform, wf *service.WorkFeed, pg platform.PlayPage) (platform.Profile, error) {
+	for _, pl := range pg.Plays {
+		if pl.Profile != nil {
+			return *pl.Profile, nil
+		}
+	}
+	return p.Adapter.Resolve(ctx, wf.ExternalID)
+}
+
+// logPageNotes reports refused replay URLs and archived replays whose URL the
+// platform changed (spec §5.2, §5.4).
+func (w *Worker) logPageNotes(ctx context.Context, p platform.Platform, wf *service.WorkFeed, refused, urlChanged int) {
+	if refused > 0 {
+		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindReplay, fmt.Sprintf(
+			"%d replays skipped: their URL is not on the %s allowlist", refused, p.DisplayName)))
+	}
+	if urlChanged > 0 {
+		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindReplay, fmt.Sprintf(
+			"%s now reports a different replay URL for %d archived %s; the archived copies are kept", p.DisplayName, urlChanged, noun(wf.Feed))))
+	}
+}
+
 func (w *Worker) backfill(ctx context.Context, wf *service.WorkFeed) error {
 	page := max(wf.BackfillPage, 1)
 	w.setStatus(StateRunning, fmt.Sprintf("Backfilling %s · page %d", wf.PlayerName, page))
@@ -92,9 +124,11 @@ func (w *Worker) backfill(ctx context.Context, wf *service.WorkFeed) error {
 	if err != nil {
 		return w.clientError(ctx, p, wf, err, false)
 	}
-	if _, err := w.svc.UpsertPlays(ctx, wf.PlayerID, wf.Platform, pg.Plays); err != nil {
+	res, err := w.svc.UpsertPlays(ctx, wf.PlayerID, wf.Platform, pg.Plays)
+	if err != nil {
 		return err
 	}
+	w.logPageNotes(ctx, p, wf, pg.Refused, res.URLChanged)
 	k := wf.Key()
 	total := pg.TotalPages
 	if len(pg.Plays) == 0 || page >= total {
