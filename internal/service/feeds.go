@@ -83,16 +83,22 @@ func (s *Service) DueFeed(ctx context.Context, interval time.Duration, busy Busy
 	return other, nil
 }
 
-// NextPollAt is when the next feed becomes due (ok=false: nothing to poll).
-func (s *Service) NextPollAt(ctx context.Context, interval time.Duration) (time.Time, bool, error) {
-	feeds, err := s.workFeeds(ctx, " ORDER BY f.last_polled_at LIMIT 1") // SQLite sorts NULL first
-	if err != nil || len(feeds) == 0 {
+// NextPollAt is when the next non-busy feed becomes due (ok=false: none).
+func (s *Service) NextPollAt(ctx context.Context, interval time.Duration, busy Busy) (time.Time, bool, error) {
+	feeds, err := s.workFeeds(ctx, " ORDER BY f.last_polled_at") // SQLite sorts NULL first
+	if err != nil {
 		return time.Time{}, false, err
 	}
-	if feeds[0].LastPolledAt == nil {
-		return s.Now(), true, nil
+	for _, f := range feeds {
+		if busy.has(f.Platform, f.Feed) {
+			continue
+		}
+		if f.LastPolledAt == nil {
+			return s.Now(), true, nil
+		}
+		return f.LastPolledAt.Add(interval), true, nil
 	}
-	return feeds[0].LastPolledAt.Add(interval), true, nil
+	return time.Time{}, false, nil
 }
 
 // NextBackfillFeed picks, round robin after last (a FeedKey string), an

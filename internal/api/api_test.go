@@ -116,6 +116,14 @@ func TestPublicReads(t *testing.T) {
 		t.Fatalf("deprecated backfill must still be filled: %v", one["backfill"])
 	}
 
+	code, byAcc, _ := call(t, h, http.MethodGet, "/api/v1/players/by/scoresaber/1001", nil)
+	if code != 200 || byAcc["name"] != "Alice" {
+		t.Fatalf("by-account lookup = %d %v", code, byAcc)
+	}
+	if code, _, _ := call(t, h, http.MethodGet, "/api/v1/players/by/scoresaber/9999", nil); code != 404 {
+		t.Fatalf("unknown account = %d", code)
+	}
+
 	code, page, _ := call(t, h, http.MethodGet, "/api/v1/players/"+id+"/scores?state=archived", nil)
 	items := page["items"].([]any)
 	if code != 200 || page["total"].(float64) != 1 || len(items) != 1 {

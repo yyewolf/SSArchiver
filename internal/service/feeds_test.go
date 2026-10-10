@@ -41,9 +41,22 @@ func TestDueFeed(t *testing.T) {
 	if f, _ := svc.DueFeed(ctx, 10*time.Minute, nil); f == nil || f.PlayerID != b {
 		t.Fatalf("disabled players are never due, got %+v", f)
 	}
-	at, ok, err := svc.NextPollAt(ctx, 10*time.Minute)
+	at, ok, err := svc.NextPollAt(ctx, 10*time.Minute, nil)
 	if err != nil || !ok || !at.Equal(testutil.T0.Add(11*time.Minute)) {
 		t.Fatalf("NextPollAt = %v %v %v", at, ok, err)
+	}
+}
+
+func TestNextPollAtSkipsBusy(t *testing.T) {
+	svc, _, _ := testutil.NewService(t)
+	ctx := context.Background()
+	mustAdd(t, svc, "1001")
+	busy := service.Busy{{Platform: model.PlatformScoreSaber, Kind: model.KindScore}: true}
+	if _, ok, err := svc.NextPollAt(ctx, time.Minute, busy); err != nil || ok {
+		t.Fatalf("busy feeds must not count: ok=%v err=%v", ok, err)
+	}
+	if at, ok, _ := svc.NextPollAt(ctx, time.Minute, nil); !ok || !at.Equal(testutil.T0) {
+		t.Fatalf("NextPollAt = %v %v", at, ok)
 	}
 }
 

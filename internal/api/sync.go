@@ -6,13 +6,23 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/yyewolf/ssarchiver/internal/platform"
 )
 
 type Window struct {
-	Name            string `json:"name" enum:"short,medium,long"`
+	Name            string `json:"name"`
 	Limit           int    `json:"limit"`
 	Used            int    `json:"used"`
 	ServerRemaining *int   `json:"server_remaining,omitempty"`
+}
+
+// Limiter is one platform limiter's usage, for the status page and API.
+type Limiter struct {
+	Platform   string     `json:"platform" example:"ScoreSaber"`
+	Name       string     `json:"name" example:"scoresaber"`
+	BlockedTil *time.Time `json:"blocked_until,omitempty"`
+	Windows    []Window   `json:"windows"`
 }
 
 type SyncStatus struct {
@@ -20,8 +30,9 @@ type SyncStatus struct {
 	Task       string     `json:"task,omitempty"`
 	Since      time.Time  `json:"since"`
 	Paused     bool       `json:"paused"`
-	BlockedTil *time.Time `json:"blocked_until,omitempty"`
-	Windows    []Window   `json:"windows"`
+	BlockedTil *time.Time `json:"blocked_until,omitempty" doc:"the ScoreSaber limiter; see limiters[]"`
+	Windows    []Window   `json:"windows" doc:"the ScoreSaber limiter; see limiters[]"`
+	Limiters   []Limiter  `json:"limiters"`
 }
 
 type SyncStatusOutput struct{ Body SyncStatus }
@@ -39,6 +50,20 @@ type RetryOutput struct {
 	}
 }
 
+// windowsDTO converts limiter window snapshots to the API shape.
+func windowsDTO(ws []platform.WindowSnapshot) []Window {
+	out := []Window{}
+	for _, w := range ws {
+		win := Window{Name: w.Name, Limit: w.Limit, Used: w.Used}
+		if w.ServerRemaining >= 0 {
+			rem := w.ServerRemaining
+			win.ServerRemaining = &rem
+		}
+		out = append(out, win)
+	}
+	return out
+}
+
 func (a *API) registerSync() {
 	huma.Register(a.api, a.admin(huma.Operation{
 		OperationID: "get-sync-status", Method: http.MethodGet, Path: "/api/v1/sync",
@@ -49,17 +74,19 @@ func (a *API) registerSync() {
 		if err != nil {
 			return nil, mapErr(err)
 		}
-		out := SyncStatus{State: string(st.State), Task: st.Task, Since: st.Since, Paused: settings.WorkerPaused, Windows: []Window{}}
+		out := SyncStatus{
+			State: string(st.State), Task: st.Task, Since: st.Since, Paused: settings.WorkerPaused,
+			Windows: windowsDTO(st.Limiter.Windows), Limiters: []Limiter{},
+		}
 		if !st.Limiter.BlockedUntil.IsZero() {
 			out.BlockedTil = &st.Limiter.BlockedUntil
 		}
-		for _, w := range st.Limiter.Windows {
-			win := Window{Name: w.Name, Limit: w.Limit, Used: w.Used}
-			if w.ServerRemaining >= 0 {
-				rem := w.ServerRemaining
-				win.ServerRemaining = &rem
+		for _, l := range st.Limiters {
+			lim := Limiter{Platform: l.Platform, Name: l.Name, Windows: windowsDTO(l.Snapshot.Windows)}
+			if !l.Snapshot.BlockedUntil.IsZero() {
+				lim.BlockedTil = &l.Snapshot.BlockedUntil
 			}
-			out.Windows = append(out.Windows, win)
+			out.Limiters = append(out.Limiters, lim)
 		}
 		return &SyncStatusOutput{Body: out}, nil
 	})

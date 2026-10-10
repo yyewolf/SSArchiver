@@ -13,6 +13,11 @@ type PlayerPath struct {
 	ID string `path:"id" pattern:"^[a-z0-9-]{1,40}$" doc:"Player ID (opaque; see identities[] for platform IDs)"`
 }
 
+type AccountPath struct {
+	Platform   string `path:"platform" maxLength:"32" example:"scoresaber"`
+	ExternalID string `path:"externalID" maxLength:"64" example:"76561198038925092"`
+}
+
 type PlayerOutput struct{ Body Player }
 
 type ListPlayersOutput struct{ Body []Player }
@@ -69,6 +74,21 @@ func (a *API) registerPlayers() {
 			return nil, mapErr(err)
 		}
 		return &PlayerOutput{Body: p}, nil
+	})
+
+	huma.Register(a.api, huma.Operation{
+		OperationID: "get-player-by-account", Method: http.MethodGet, Path: "/api/v1/players/by/{platform}/{externalID}",
+		Summary: "Find a player by a platform account", Tags: []string{"Players"},
+	}, func(ctx context.Context, in *AccountPath) (*PlayerOutput, error) {
+		pl, err := a.svc.PlayerByIdentity(ctx, in.Platform, in.ExternalID)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		dto, err := a.summary(ctx, pl.ID)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		return &PlayerOutput{Body: dto}, nil
 	})
 
 	huma.Register(a.api, a.admin(huma.Operation{

@@ -142,31 +142,60 @@ func (w *Worker) Step(ctx context.Context) (did bool, err error) {
 	}
 	w.maybePrune(ctx)
 
-	busy := w.busy()
-	wf, err := w.svc.DueFeed(ctx, st.PollInterval, busy)
+	feedBusy, replayBusy, _ := w.busy()
+	wf, err := w.svc.DueFeed(ctx, st.PollInterval, feedBusy)
 	if err != nil {
 		return false, err
 	}
 	if wf != nil {
 		return true, w.poll(ctx, wf)
 	}
-	if did, err := w.nextReplay(ctx, service.TierNew, busy); did || err != nil {
+	if did, err := w.nextReplay(ctx, service.TierNew, replayBusy); did || err != nil {
 		return did, err
 	}
-	if did, err := w.nextBackfill(ctx, true, busy); did || err != nil {
+	if did, err := w.nextBackfill(ctx, true, feedBusy); did || err != nil {
 		return did, err
 	}
-	if did, err := w.nextReplay(ctx, service.TierBackfill, busy); did || err != nil {
+	if did, err := w.nextReplay(ctx, service.TierBackfill, replayBusy); did || err != nil {
 		return did, err
 	}
-	if did, err := w.nextBackfill(ctx, false, busy); did || err != nil {
+	if did, err := w.nextBackfill(ctx, false, feedBusy); did || err != nil {
 		return did, err
 	}
-	return w.nextReplay(ctx, service.TierBackfillOther, busy)
+	return w.nextReplay(ctx, service.TierBackfillOther, replayBusy)
 }
 
-// busy lists the (platform, kind) pairs whose limiter is not ready (Task 8).
-func (w *Worker) busy() service.Busy { return nil }
+// busy lists, per (platform, kind), the feeds and replay downloads whose
+// limiter is not ready, and the earliest time one becomes ready (spec §5.1).
+func (w *Worker) busy() (feeds, replays service.Busy, wake time.Time) {
+	reg := w.svc.Platforms()
+	if reg == nil {
+		return nil, nil, time.Time{}
+	}
+	now := w.svc.Now()
+	feeds, replays = service.Busy{}, service.Busy{}
+	for _, p := range reg.All() {
+		notReady := map[string]bool{} // limiter name → not ready; unknown and "" names are ready
+		for _, l := range p.Adapter.Limiters() {
+			if ok, at := l.Ready(now); !ok {
+				notReady[l.Name()] = true
+				if wake.IsZero() || at.Before(wake) {
+					wake = at
+				}
+			}
+		}
+		for _, f := range p.Feeds {
+			pk := service.PlatformKind{Platform: p.Name, Kind: f.Kind}
+			if notReady[p.Adapter.FeedLimiter(f.Kind)] {
+				feeds[pk] = true
+			}
+			if notReady[p.Adapter.ReplayLimiter(f.Kind)] {
+				replays[pk] = true
+			}
+		}
+	}
+	return feeds, replays, wake
+}
 
 func (w *Worker) nextReplay(ctx context.Context, tier service.ReplayTier, busy service.Busy) (bool, error) {
 	sc, err := w.svc.NextReplay(ctx, tier, w.lastReplayPlayer, busy)
@@ -213,10 +242,12 @@ func (w *Worker) idleFor(ctx context.Context) time.Duration {
 			d = at.Sub(now)
 		}
 	}
+	feedBusy, _, wake := w.busy()
 	if st, err := w.svc.Settings(ctx); err == nil {
-		consider(w.svc.NextPollAt(ctx, st.PollInterval))
+		consider(w.svc.NextPollAt(ctx, st.PollInterval, feedBusy))
 	}
 	consider(w.svc.NextRetryAt(ctx))
+	consider(wake, !wake.IsZero(), nil)
 	return max(d, time.Second)
 }
 

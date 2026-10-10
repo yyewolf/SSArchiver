@@ -188,8 +188,10 @@ templ workerCard(v SyncView) {
 				if v.Status.Task != "" {
 					<p class="truncate">{ v.Status.Task }</p>
 				}
-				if !v.Status.Limiter.BlockedUntil.IsZero() {
-					<p class="text-muted-foreground">ScoreSaber asked us to wait; resuming { Until(v.Status.Limiter.BlockedUntil, time.Now()) }.</p>
+				for _, l := range v.Status.Limiters {
+					if !l.Snapshot.BlockedUntil.IsZero() {
+						<p class="text-muted-foreground">{ l.Platform } asked us to wait; resuming { Until(l.Snapshot.BlockedUntil, time.Now()) }.</p>
+					}
 				}
 				<p class="text-muted-foreground">
 					{ plural(v.PendingTotal, "replay") } pending · { fmt.Sprintf("~%.0f replays/hour", v.RatePerHour) } · { etaText(v.ETA) }
@@ -200,35 +202,39 @@ templ workerCard(v SyncView) {
 }
 
 templ budgetCard(v SyncView) {
-	@card.Card() {
-		@card.Header() {
-			@card.Title() {
-				ScoreSaber budget
-			}
-			@card.Description() {
-				Requests sent by this instance in each ScoreSaber rate-limit window.
-			}
-		}
-		@card.Content() {
-			<div class="flex flex-col gap-4">
-				for _, w := range v.Status.Limiter.Windows {
-					<div class="flex flex-col gap-1.5">
-						<div class="flex justify-between text-sm">
-							<span>{ windowLabel(w.Name) }</span>
-							<span class="tabular-nums text-muted-foreground">{ strconv.Itoa(w.Used) } / { strconv.Itoa(w.Limit) }</span>
-						</div>
-						@progress.Progress(progress.Props{Value: w.Used, Max: max(w.Limit, 1)})
-						if w.ServerRemaining >= 0 {
-							<p class="text-xs text-muted-foreground">ScoreSaber reports { strconv.Itoa(w.ServerRemaining) } remaining</p>
+	<div class="flex flex-col gap-4">
+		for _, l := range v.Status.Limiters {
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						{ l.Platform } budget
+					}
+					@card.Description() {
+						Requests sent by this instance in each { l.Platform } rate-limit window.
+					}
+				}
+				@card.Content() {
+					<div class="flex flex-col gap-4">
+						for _, w := range l.Snapshot.Windows {
+							<div class="flex flex-col gap-1.5">
+								<div class="flex justify-between text-sm">
+									<span>{ windowLabel(w.Name) }</span>
+									<span class="tabular-nums text-muted-foreground">{ strconv.Itoa(w.Used) } / { strconv.Itoa(w.Limit) }</span>
+								</div>
+								@progress.Progress(progress.Props{Value: w.Used, Max: max(w.Limit, 1)})
+								if w.ServerRemaining >= 0 {
+									<p class="text-xs text-muted-foreground">{ l.Platform } reports { strconv.Itoa(w.ServerRemaining) } remaining</p>
+								}
+							</div>
+						}
+						if len(l.Snapshot.Windows) == 0 {
+							<p class="text-sm text-muted-foreground">No requests sent yet.</p>
 						}
 					</div>
 				}
-				if len(v.Status.Limiter.Windows) == 0 {
-					<p class="text-sm text-muted-foreground">No requests sent yet.</p>
-				}
-			</div>
+			}
 		}
-	}
+	</div>
 }
 
 templ queueCard(v SyncView) {

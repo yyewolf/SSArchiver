@@ -129,6 +129,15 @@ func (e *testEnv) seed() string {
 	return p.ID
 }
 
+func (e *testEnv) playerID(account string) string {
+	e.t.Helper()
+	p, err := e.svc.PlayerByIdentity(context.Background(), model.PlatformScoreSaber, account)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return p.ID
+}
+
 func contains(t *testing.T, body string, parts ...string) {
 	t.Helper()
 	for _, p := range parts {

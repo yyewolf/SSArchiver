@@ -52,6 +52,25 @@ func TestPlayerNotFound(t *testing.T) {
 	contains(t, rec.Body.String(), "not archived here")
 }
 
+func TestAccountLinkRedirects(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.seed()
+	res := e.do(http.MethodGet, "/p/ss/1001", nil)
+	if res.Code != http.StatusMovedPermanently {
+		t.Fatalf("status = %d", res.Code)
+	}
+	id := e.playerID("1001")
+	if loc := res.Header().Get("Location"); loc != "/p/"+id {
+		t.Fatalf("Location = %q, want /p/%s", loc, id)
+	}
+	for _, path := range []string{"/p/ss/9999", "/p/zz/1001"} {
+		if got := e.do(http.MethodGet, path, nil).Code; got != http.StatusNotFound {
+			t.Errorf("%s = %d, want 404", path, got)
+		}
+	}
+}
+
 func TestScorePageArchived(t *testing.T) {
 	e := newEnv(t)
 	e.setup()

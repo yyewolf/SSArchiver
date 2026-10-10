@@ -20,17 +20,18 @@ func TestSyncPage(t *testing.T) {
 	e := newEnv(t)
 	c := e.login()
 	e.seed()
+	snap := scoresaber.LimiterSnapshot{Windows: []scoresaber.WindowSnapshot{
+		{Name: "short", Limit: 20, Used: 3, ServerRemaining: -1},
+		{Name: "medium", Limit: 60, Used: 9, ServerRemaining: -1},
+		{Name: "long", Limit: 300, Used: 120, ServerRemaining: 200},
+	}}
 	e.status.st = archiver.Status{
 		State: archiver.StateRunning, Task: "Downloading replay 42 · Alice · Song", Since: testutil.T0,
-		Limiter: scoresaber.LimiterSnapshot{Windows: []scoresaber.WindowSnapshot{
-			{Name: "short", Limit: 20, Used: 3, ServerRemaining: -1},
-			{Name: "medium", Limit: 60, Used: 9, ServerRemaining: -1},
-			{Name: "long", Limit: 300, Used: 120, ServerRemaining: 200},
-		}},
+		Limiter: snap, Limiters: []archiver.LimiterStatus{{Platform: "ScoreSaber", Name: "scoresaber", Snapshot: snap}},
 	}
 	body := e.do(http.MethodGet, "/admin/sync", nil, withCookie(c)).Body.String()
 	contains(t, body, "Running", "Downloading replay 42", "Last hour", "120 / 300", "ScoreSaber reports 200 remaining",
-		"Alice", `hx-trigger="every 3s"`, `id="sync-events"`, `id="failed-replays"`)
+		"ScoreSaber budget", "Alice", `hx-trigger="every 3s"`, `id="sync-events"`, `id="failed-replays"`)
 
 	live := e.do(http.MethodGet, "/admin/sync/live", nil, withCookie(c), htmx("sync-live")).Body.String()
 	if !strings.HasPrefix(strings.TrimSpace(live), `<div id="sync-live"`) || strings.Contains(live, "<html") {

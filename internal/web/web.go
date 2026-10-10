@@ -59,6 +59,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /login", h.loginSubmit)
 	mux.HandleFunc("POST /logout", h.logout)
 	mux.HandleFunc("GET /p/{id}", h.player)
+	mux.HandleFunc("GET /p/{slug}/{externalID}", h.accountLink)
 	mux.HandleFunc("GET /s/{id}", h.score)
 	mux.HandleFunc("GET /r/{file}", h.replayFile)
 	mux.HandleFunc("OPTIONS /r/{file}", h.replayPreflight)

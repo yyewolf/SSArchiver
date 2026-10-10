@@ -3,12 +3,33 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
 )
+
+// accountLink resolves a readable account URL (/p/ss/{id}) to the player's
+// page; it keeps working through merges (spec §6.1).
+func (h *Handler) accountLink(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.svc.Platforms().BySlug(r.PathValue("slug"))
+	if !ok {
+		h.notFound(w, r, "This player is not archived here.")
+		return
+	}
+	pl, err := h.svc.PlayerByIdentity(r.Context(), p.Name, r.PathValue("externalID"))
+	if isNotFound(err) {
+		h.notFound(w, r, "This player is not archived here.")
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/p/"+url.PathEscape(pl.ID), http.StatusMovedPermanently)
+}
 
 func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
