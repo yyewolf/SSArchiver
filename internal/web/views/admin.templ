@@ -2,6 +2,7 @@ package views
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
@@ -14,13 +15,85 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/web/components/empty"
 	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
 	"github.com/yyewolf/ssarchiver/internal/web/components/input"
+	"github.com/yyewolf/ssarchiver/internal/web/components/nativeselect"
 	"github.com/yyewolf/ssarchiver/internal/web/components/table"
 	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
 )
 
 type AdminPlayersView struct {
-	Players []service.PlayerSummary
-	Now     time.Time
+	Players   []service.PlayerSummary
+	Platforms []platform.Platform // every registered platform, by priority
+	Now       time.Time
+}
+
+// Unlinked are the registered platforms pl has no account on.
+func (v AdminPlayersView) Unlinked(pl service.PlayerSummary) []platform.Platform {
+	var out []platform.Platform
+	for _, p := range v.Platforms {
+		if !hasPlatform(pl, p.Name) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// MergeTargets are the players pl can be merged into: no platform in common
+// (spec §6.2).
+func (v AdminPlayersView) MergeTargets(pl service.PlayerSummary) []service.PlayerSummary {
+	var out []service.PlayerSummary
+	for _, o := range v.Players {
+		if o.ID == pl.ID {
+			continue
+		}
+		disjoint := true
+		for _, id := range pl.Identities {
+			disjoint = disjoint && !hasPlatform(o, id.Platform)
+		}
+		if disjoint {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func hasPlatform(pl service.PlayerSummary, name string) bool {
+	for _, id := range pl.Identities {
+		if id.Platform == name {
+			return true
+		}
+	}
+	return false
+}
+
+// addHelp explains the add form: URLs pick their platform, bare IDs go to the legacy one.
+func addHelp(ps []platform.Platform) string {
+	names := make([]string, 0, len(ps))
+	legacy := ""
+	for _, p := range ps {
+		names = append(names, p.DisplayName)
+		if p.Legacy {
+			legacy = p.DisplayName
+		}
+	}
+	help := "Paste a profile URL (" + strings.Join(names, ", ") + ") or a player ID."
+	if legacy != "" {
+		help += " Bare IDs are " + legacy + " IDs unless you pick another platform."
+	}
+	return help
+}
+
+func identityVariant(id service.Identity) badge.Variant {
+	switch {
+	case id.LastError != "":
+		return badge.VariantDestructive
+	case !id.Enabled:
+		return badge.VariantOutline
+	}
+	return badge.VariantSecondary
+}
+
+func identityURL(playerID, platformName string) string {
+	return "/admin/players/" + playerID + "/identities/" + platformName
 }
 
 func lastPoll(f model.SyncFeed, now time.Time) string {
@@ -40,6 +113,13 @@ func backfillLabel(f model.SyncFeed) string {
 	return "Waiting"
 }
 
+// Menus open inline inside their table cell: the table scrolls horizontally
+// (overflow-x-auto), which would clip an absolutely positioned popover.
+const (
+	menuClass    = "mt-1 flex w-72 flex-col gap-2 rounded-md border bg-popover p-3 text-left text-xs text-popover-foreground shadow-sm"
+	summaryClass = "flex cursor-pointer list-none items-center [&::-webkit-details-marker]:hidden"
+)
+
 templ AdminPlayersPage(p Page, v AdminPlayersView) {
 	@Layout(p) {
 		<div class="mb-8 flex flex-col gap-1">
@@ -52,12 +132,22 @@ templ AdminPlayersPage(p Page, v AdminPlayersView) {
 					Add a player
 				}
 				@card.Description() {
-					Paste a ScoreSaber profile URL or a player ID.
+					{ addHelp(v.Platforms) }
 				}
 			}
 			@card.Content() {
 				<form hx-post="/admin/players/lookup" hx-target="#lookup-result" hx-swap="innerHTML" class="flex flex-col gap-2 sm:flex-row">
-					@input.Input(input.Props{Name: "ref", Placeholder: "https://scoresaber.com/u/76561198…", Required: true, Class: "sm:flex-1", Attributes: templ.Attributes{"aria-label": "ScoreSaber profile URL or player ID"}})
+					@input.Input(input.Props{Name: "ref", Placeholder: "Profile URL or player ID", Required: true, Class: "sm:flex-1", Attributes: templ.Attributes{"aria-label": "Profile URL or player ID"}})
+					@nativeselect.NativeSelect(nativeselect.Props{Name: "platform", Attributes: templ.Attributes{"aria-label": "Platform"}}) {
+						@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: true}) {
+							Detect from URL
+						}
+						for _, pf := range v.Platforms {
+							@nativeselect.Option(nativeselect.OptionProps{Value: pf.Name}) {
+								{ pf.DisplayName }
+							}
+						}
+					}
 					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantSecondary}) {
 						@icon.Search()
 						Look up
@@ -80,7 +170,7 @@ templ PlayerPreview(platformName string, prof platform.Profile, tracked bool) {
 		}
 		<div class="min-w-0 flex-1">
 			<p class="truncate font-medium">{ prof.Name }</p>
-			<p class="font-mono text-xs text-muted-foreground">{ prof.ExternalID } · { prof.Country }</p>
+			<p class="font-mono text-xs text-muted-foreground">{ PlatformName(ctx, platformName) } · { prof.ExternalID } · { prof.Country }</p>
 		</div>
 		if tracked {
 			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
@@ -121,6 +211,9 @@ templ AdminPlayersTable(v AdminPlayersView) {
 								Player
 							}
 							@table.Head() {
+								Accounts
+							}
+							@table.Head() {
 								Status
 							}
 							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
@@ -139,7 +232,7 @@ templ AdminPlayersTable(v AdminPlayersView) {
 					}
 					@table.Body() {
 						for _, pl := range v.Players {
-							@AdminPlayerRow(pl, v.Now)
+							@AdminPlayerRow(pl, v)
 						}
 					}
 				}
@@ -148,7 +241,7 @@ templ AdminPlayersTable(v AdminPlayersView) {
 	</div>
 }
 
-templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
+templ AdminPlayerRow(pl service.PlayerSummary, v AdminPlayersView) {
 	@table.Row(table.RowProps{ID: "player-" + pl.ID}) {
 		@table.Cell() {
 			<a href={ templ.SafeURL("/p/" + pl.ID) } class="flex items-center gap-2 underline-offset-4 hover:underline">
@@ -160,6 +253,16 @@ templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
 				}
 				<span class="font-medium">{ pl.Name }</span>
 			</a>
+		}
+		@table.Cell() {
+			<div class="flex flex-wrap items-center gap-1">
+				for _, id := range pl.Identities {
+					@identityMenu(pl, id)
+				}
+				if un := v.Unlinked(pl); len(un) > 0 {
+					@linkMenu(pl, un)
+				}
+			</div>
 		}
 		@table.Cell() {
 			if pl.Enabled {
@@ -182,7 +285,7 @@ templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
 			{ Number(pl.Counts.Archived) } / { Number(pl.Counts.Replays()) }
 		}
 		@table.Cell(table.CellProps{Class: "hidden text-muted-foreground md:table-cell"}) {
-			{ lastPoll(pl.Sync(), now) }
+			{ lastPoll(pl.Sync(), v.Now) }
 		}
 		@table.Cell(table.CellProps{Class: "text-right"}) {
 			<div class="flex items-center justify-end gap-1">
@@ -199,6 +302,7 @@ templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
 						}
 					}
 				</form>
+				@mergeMenu(pl, v.MergeTargets(pl))
 				<form
 					hx-post={ "/admin/players/" + pl.ID + "/delete" }
 					hx-target={ "#player-" + pl.ID }
@@ -219,13 +323,123 @@ templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
 	}
 }
 
+templ identityMenu(pl service.PlayerSummary, id service.Identity) {
+	<details>
+		<summary class={ summaryClass } title={ PlatformName(ctx, id.Platform) + " account " + id.ExternalID }>
+			@badge.Badge(badge.Props{Variant: identityVariant(id)}) {
+				{ PlatformName(ctx, id.Platform) }
+				if id.LastError != "" {
+					@icon.TriangleAlert(icon.Props{Size: 12})
+				}
+			}
+		</summary>
+		<div class={ menuClass }>
+			<p class="font-mono break-all text-muted-foreground">{ id.ExternalID }</p>
+			if id.LastError != "" {
+				<p class="text-destructive">{ id.LastError }</p>
+			}
+			<form hx-post={ identityURL(pl.ID, id.Platform) + "/enabled" } hx-target={ "#player-" + pl.ID } hx-swap="outerHTML">
+				<input type="hidden" name="enabled" value={ strconv.FormatBool(!id.Enabled) }/>
+				@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm, Class: "w-full"}) {
+					if id.Enabled {
+						Pause this account
+					} else {
+						Resume this account
+					}
+				}
+			</form>
+			if len(pl.Identities) > 1 {
+				<form
+					hx-post={ identityURL(pl.ID, id.Platform) + "/delete" }
+					hx-target={ "#player-" + pl.ID }
+					hx-swap="outerHTML"
+					hx-confirm={ "Unlink this " + PlatformName(ctx, id.Platform) + " account from " + pl.Name + "? Its scores are removed from the archive." }
+					class="flex items-center justify-between gap-2"
+				>
+					<label class="flex items-center gap-1 text-muted-foreground" title="Also delete this account's replay files">
+						<input type="checkbox" name="delete_files" class="size-3.5 accent-primary"/>
+						files
+					</label>
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, Size: button.SizeSm, Class: "text-destructive"}) {
+						@icon.Unlink()
+						Unlink
+					}
+				</form>
+			}
+		</div>
+	</details>
+}
+
+templ linkMenu(pl service.PlayerSummary, plats []platform.Platform) {
+	<details>
+		<summary class={ summaryClass } title="Link another platform account">
+			@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+				@icon.Plus(icon.Props{Size: 12})
+				Link
+			}
+		</summary>
+		<form hx-post={ "/admin/players/" + pl.ID + "/identities" } hx-target={ "#player-" + pl.ID } hx-swap="outerHTML" class={ menuClass }>
+			@nativeselect.NativeSelect(nativeselect.Props{Name: "platform", Attributes: templ.Attributes{"aria-label": "Platform"}}) {
+				for _, pf := range plats {
+					@nativeselect.Option(nativeselect.OptionProps{Value: pf.Name}) {
+						{ pf.DisplayName }
+					}
+				}
+			}
+			@input.Input(input.Props{Name: "ref", Placeholder: "Profile URL or player ID", Required: true, Attributes: templ.Attributes{"aria-label": "Account to link"}})
+			@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm}) {
+				@icon.Link()
+				Link account
+			}
+		</form>
+	</details>
+}
+
+templ mergeMenu(pl service.PlayerSummary, targets []service.PlayerSummary) {
+	<details>
+		<summary class={ summaryClass + " size-8 justify-center rounded-md hover:bg-accent" } title="Merge into another player" aria-label="Merge into another player">
+			@icon.Merge()
+		</summary>
+		<div class={ menuClass }>
+			if len(targets) == 0 {
+				<p class="text-muted-foreground">No player to merge into: merging needs two players with no platform in common.</p>
+			} else {
+				<form
+					hx-post={ "/admin/players/" + pl.ID + "/merge" }
+					hx-target="#admin-players"
+					hx-swap="outerHTML"
+					hx-confirm={ "Merge " + pl.Name + " into the selected player? Every account, score and replay moves, and " + pl.Name + "'s page will redirect there." }
+					class="flex flex-col gap-2"
+				>
+					<p>Merge { pl.Name } into:</p>
+					@nativeselect.NativeSelect(nativeselect.Props{Name: "into", Attributes: templ.Attributes{"aria-label": "Merge into"}}) {
+						for _, t := range targets {
+							@nativeselect.Option(nativeselect.OptionProps{Value: t.ID}) {
+								{ t.Name }
+							}
+						}
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm}) {
+						Merge
+					}
+				</form>
+			}
+		</div>
+	</details>
+}
+
 templ PlayerAdded(v AdminPlayersView, name string) {
 	@AdminPlayersTable(v)
 	<div id="lookup-result" hx-swap-oob="innerHTML"></div>
 	@ToastOOB(toast.TypeSuccess, "Now tracking "+name, "Their history is being archived in the background.")
 }
 
-templ PlayerRowToast(pl service.PlayerSummary, now time.Time, title string) {
-	@AdminPlayerRow(pl, now)
+templ PlayerRowToast(pl service.PlayerSummary, v AdminPlayersView, title string) {
+	@AdminPlayerRow(pl, v)
 	@ToastOOB(toast.TypeSuccess, title, pl.Name)
+}
+
+templ PlayersMerged(v AdminPlayersView, title string) {
+	@AdminPlayersTable(v)
+	@ToastOOB(toast.TypeSuccess, title, "")
 }

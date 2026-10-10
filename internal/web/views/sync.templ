@@ -1,12 +1,16 @@
 package views
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/archiver"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
 	"github.com/yyewolf/ssarchiver/internal/web/components/button"
@@ -20,8 +24,50 @@ import (
 
 type QueueRow struct {
 	Player   service.PlayerSummary
+	Identity service.Identity
+	Feed     model.SyncFeed
+	Counts   service.Counts // this feed's rows
 	NextPoll time.Time
 	ETA      time.Duration
+}
+
+// active reports whether the worker runs this feed.
+func (q QueueRow) active() bool { return q.Player.Enabled && q.Identity.Enabled && q.Feed.Enabled }
+
+// feedLabel names a queue row: "BeatLeader", or "BeatLeader · attempts" for other feeds.
+func feedLabel(ctx context.Context, q QueueRow) string {
+	name := PlatformName(ctx, q.Identity.Platform)
+	if q.Feed.Feed != model.KindScore {
+		name += " · " + q.Feed.Feed + "s"
+	}
+	return name
+}
+
+type EventsView struct {
+	Events    []*model.SyncEvent
+	Total     int64
+	Filter    service.EventFilter
+	Players   []service.PlayerSummary
+	Platforms []platform.Platform
+	Now       time.Time
+}
+
+// eventAccount names the platform account an event is about ("—" for global events).
+func eventAccount(ctx context.Context, e *model.SyncEvent) string {
+	if e.Platform == nil {
+		return "—"
+	}
+	s := PlatformName(ctx, *e.Platform)
+	if e.Feed != nil && *e.Feed != model.KindScore {
+		s += " · " + *e.Feed + "s"
+	}
+	return s
+}
+
+func EventsURL(f service.EventFilter, page int) string {
+	q := url.Values{"level": {f.Level}, "kind": {f.Kind}, "player": {f.PlayerID}, "platform": {f.Platform}, "feed": {f.Feed}}
+	q.Set("page", strconv.Itoa(page))
+	return "/admin/sync/events?" + q.Encode()
 }
 
 type SyncView struct {
@@ -33,14 +79,6 @@ type SyncView struct {
 	RatePerHour  float64
 	ETA          time.Duration
 	Now          time.Time
-}
-
-type EventsView struct {
-	Events  []*model.SyncEvent
-	Total   int64
-	Filter  service.EventFilter
-	Players []service.PlayerSummary
-	Now     time.Time
 }
 
 type FailedView struct {
@@ -89,8 +127,13 @@ func (v EventsView) playerName(id *string) string {
 	return *id
 }
 
-func EventsURL(f service.EventFilter, page int) string {
-	return fmt.Sprintf("/admin/sync/events?level=%s&kind=%s&player=%s&page=%d", f.Level, f.Kind, f.PlayerID, page)
+// limiterTitle names a budget card: the platform, plus the host class when a
+// platform has several limiters ("beatleader/api" → "BeatLeader API").
+func limiterTitle(l archiver.LimiterStatus) string {
+	if _, sub, ok := strings.Cut(l.Name, "/"); ok {
+		return l.Platform + " " + strings.ToUpper(sub)
+	}
+	return l.Platform
 }
 
 func FailedURL(page int) string {
@@ -207,10 +250,10 @@ templ budgetCard(v SyncView) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ l.Platform } budget
+						{ limiterTitle(l) } budget
 					}
 					@card.Description() {
-						Requests sent by this instance in each { l.Platform } rate-limit window.
+						Requests sent by this instance in each { limiterTitle(l) } rate-limit window.
 					}
 				}
 				@card.Content() {
@@ -244,7 +287,7 @@ templ queueCard(v SyncView) {
 				Queue
 			}
 			@card.Description() {
-				Per-player progress. Estimates assume the current budget and poll interval.
+				Per-account progress. Estimates assume the current budget and poll interval.
 			}
 		}
 		@card.Content() {
@@ -256,6 +299,9 @@ templ queueCard(v SyncView) {
 						@table.Row() {
 							@table.Head() {
 								Player
+							}
+							@table.Head() {
+								Account
 							}
 							@table.Head() {
 								Next poll
@@ -292,27 +338,33 @@ templ queueCard(v SyncView) {
 										<span class="ml-1 text-xs text-muted-foreground">(disabled)</span>
 									}
 								}
+								@table.Cell() {
+									{ feedLabel(ctx, q) }
+									if q.Player.Enabled && !q.Identity.Enabled {
+										<span class="ml-1 text-xs text-muted-foreground">(paused)</span>
+									}
+								}
 								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
-									if q.Player.Enabled {
+									if q.active() {
 										{ Until(q.NextPoll, v.Now) }
 									} else {
 										—
 									}
 								}
-							@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
-								{ backfillLabel(q.Player.Sync()) }
-							}
-								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
-									{ Number(q.Player.Counts.Archived) }
+								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+									{ backfillLabel(q.Feed) }
 								}
 								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
-									{ Number(q.Player.Counts.Pending) }
+									{ Number(q.Counts.Archived) }
+								}
+								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+									{ Number(q.Counts.Pending) }
 								}
 								@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums sm:table-cell"}) {
-									{ Number(q.Player.Counts.Failed) }
+									{ Number(q.Counts.Failed) }
 								}
 								@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums sm:table-cell"}) {
-									{ Number(q.Player.Counts.Gone) }
+									{ Number(q.Counts.Gone) }
 								}
 								@table.Cell(table.CellProps{Class: "hidden text-muted-foreground lg:table-cell"}) {
 									if q.ETA > 0 {
@@ -356,6 +408,26 @@ templ eventFilters(ev EventsView) {
 					} else {
 						{ o }
 					}
+				}
+			}
+		}
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "platform", Attributes: templ.Attributes{"aria-label": "Platform"}}) {
+			@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: ev.Filter.Platform == ""}) {
+				All platforms
+			}
+			for _, pf := range ev.Platforms {
+				@nativeselect.Option(nativeselect.OptionProps{Value: pf.Name, Selected: ev.Filter.Platform == pf.Name}) {
+					{ pf.DisplayName }
+				}
+			}
+		}
+		@nativeselect.NativeSelect(nativeselect.Props{Name: "feed", Attributes: templ.Attributes{"aria-label": "Feed"}}) {
+			@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: ev.Filter.Feed == ""}) {
+				All feeds
+			}
+			for _, o := range []string{model.KindScore, model.KindAttempt} {
+				@nativeselect.Option(nativeselect.OptionProps{Value: o, Selected: ev.Filter.Feed == o}) {
+					{ o + "s" }
 				}
 			}
 		}
@@ -408,6 +480,9 @@ templ EventsTable(ev EventsView) {
 								Kind
 							}
 							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
+								Account
+							}
+							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
 								Player
 							}
 							@table.Head() {
@@ -426,6 +501,9 @@ templ EventsTable(ev EventsView) {
 								}
 								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
 									{ e.Kind }
+								}
+								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+									{ eventAccount(ctx, e) }
 								}
 								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
 									{ ev.playerName(e.PlayerID) }

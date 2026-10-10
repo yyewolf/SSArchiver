@@ -11,6 +11,7 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/archiver"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
@@ -124,4 +125,48 @@ func TestSyncRequiresLogin(t *testing.T) {
 	if rec := e.do(http.MethodGet, "/admin/sync", nil); rec.Code != http.StatusSeeOther {
 		t.Fatalf("code = %d", rec.Code)
 	}
+}
+
+func TestSyncQueuePerFeed(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	c := e.login()
+	a := e.crossSeed()
+	body := e.do(http.MethodGet, "/admin/sync", nil, withCookie(c)).Body.String()
+	contains(t, body, "Per-account progress", "ScoreSaber", "TestPlat")
+	if n := strings.Count(body, `hx-post="/admin/players/`+a+`/poll"`); n != 2 {
+		t.Fatalf("one queue row per feed: %d", n)
+	}
+}
+
+// TestBudgetCardPerLimiter: a platform with several limiters (BeatLeader's API
+// and CDN) gets one titled card per limiter.
+func TestBudgetCardPerLimiter(t *testing.T) {
+	e := newEnv(t)
+	c := e.login()
+	win := func(limit, used int) platform.LimiterSnapshot {
+		return platform.LimiterSnapshot{Windows: []platform.WindowSnapshot{{Name: "short", Limit: limit, Used: used, ServerRemaining: -1}}}
+	}
+	e.status.st = archiver.Status{State: archiver.StateIdle, Since: testutil.T0, Limiters: []archiver.LimiterStatus{
+		{Platform: "TestPlat", Name: "testplat/api", Snapshot: win(40, 2)},
+		{Platform: "TestPlat", Name: "testplat/cdn", Snapshot: win(20, 5)},
+	}}
+	body := e.do(http.MethodGet, "/admin/sync", nil, withCookie(c)).Body.String()
+	contains(t, body, "TestPlat API budget", "TestPlat CDN budget", "Last 10 seconds", "2 / 40", "5 / 20")
+}
+
+func TestSyncEventsFilterByPlatform(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	c := e.login()
+	ctx := context.Background()
+	e.svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindPoll, Platform: new("testplat"), Feed: new(model.KindScore), Message: "tp polled"})
+	e.svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindPoll, Platform: new(model.PlatformScoreSaber), Feed: new(model.KindScore), Message: "ss polled"})
+	tp := e.do(http.MethodGet, "/admin/sync/events?platform=testplat", nil, withCookie(c), htmx("sync-events")).Body.String()
+	if !strings.Contains(tp, "tp polled") || strings.Contains(tp, "ss polled") {
+		t.Fatalf("platform filter:\n%s", tp)
+	}
+	contains(t, tp, "TestPlat")
+	if att := e.do(http.MethodGet, "/admin/sync/events?feed=attempt", nil, withCookie(c), htmx("sync-events")).Body.String(); strings.Contains(att, "polled") {
+		t.Fatal("feed filter")
+	}
+	contains(t, e.do(http.MethodGet, "/admin/sync", nil, withCookie(c)).Body.String(), `name="platform"`, "All platforms", `name="feed"`, "All feeds")
 }

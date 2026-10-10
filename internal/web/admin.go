@@ -31,7 +31,22 @@ func sentence(err error) string {
 
 func (h *Handler) adminPlayersView(r *http.Request) (views.AdminPlayersView, error) {
 	players, err := h.svc.ListPlayers(r.Context(), true)
-	return views.AdminPlayersView{Players: players, Now: h.svc.Now()}, err
+	return views.AdminPlayersView{Players: players, Platforms: h.svc.Platforms().All(), Now: h.svc.Now()}, err
+}
+
+// renderRow re-renders one player's row with a success toast.
+func (h *Handler) renderRow(w http.ResponseWriter, r *http.Request, id, title string) {
+	v, err := h.adminPlayersView(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	pl, err := h.playerSummary(r, id)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	render(w, r, http.StatusOK, views.PlayerRowToast(pl, v, title))
 }
 
 func (h *Handler) adminPlayers(w http.ResponseWriter, r *http.Request) {
@@ -105,16 +120,100 @@ func (h *Handler) setPlayerEnabled(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	pl, err := h.playerSummary(r, id)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
 	title := "Tracking resumed"
 	if !enabled {
 		title = "Tracking paused"
 	}
-	render(w, r, http.StatusOK, views.PlayerRowToast(pl, h.svc.Now(), title))
+	h.renderRow(w, r, id, title)
+}
+
+func (h *Handler) linkIdentity(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	_, err := h.svc.LinkIdentity(r.Context(), id, r.PostFormValue("ref"), r.PostFormValue("platform"))
+	switch {
+	case errors.Is(err, service.ErrIdentityLinkedElsewhere):
+		h.toastOnly(w, r, toast.TypeWarning, "Already tracked", sentence(err))
+		return
+	case errors.Is(err, service.ErrPlatformAlreadyLinked), errors.Is(err, service.ErrInvalidPlayerRef), isNotFound(err):
+		h.toastOnly(w, r, toast.TypeError, "Could not link account", sentence(err))
+		return
+	case err != nil:
+		h.serverError(w, r, err)
+		return
+	}
+	h.renderRow(w, r, id, "Account linked")
+}
+
+func (h *Handler) setIdentityEnabled(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	enabled := r.PostFormValue("enabled") == "true"
+	if err := h.svc.SetIdentityEnabled(r.Context(), id, r.PathValue("platform"), enabled); err != nil {
+		if isNotFound(err) {
+			h.toastOnly(w, r, toast.TypeError, "Account not found", "")
+			return
+		}
+		h.serverError(w, r, err)
+		return
+	}
+	title := "Account resumed"
+	if !enabled {
+		title = "Account paused"
+	}
+	h.renderRow(w, r, id, title)
+}
+
+func (h *Handler) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	err := h.svc.UnlinkIdentity(r.Context(), id, r.PathValue("platform"), r.PostFormValue("delete_files") == "on")
+	switch {
+	case errors.Is(err, service.ErrLastIdentity):
+		h.toastOnly(w, r, toast.TypeError, "Could not unlink account", sentence(err))
+		return
+	case isNotFound(err):
+		h.toastOnly(w, r, toast.TypeError, "Account not found", "")
+		return
+	case err != nil:
+		h.serverError(w, r, err)
+		return
+	}
+	h.renderRow(w, r, id, "Account unlinked")
+}
+
+func (h *Handler) mergePlayer(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	ctx := r.Context()
+	src, serr := h.svc.GetPlayer(ctx, r.PathValue("id"))
+	dst, derr := h.svc.GetPlayer(ctx, r.PostFormValue("into"))
+	if serr != nil || derr != nil {
+		h.toastOnly(w, r, toast.TypeError, "Could not merge", "Player not found.")
+		return
+	}
+	err := h.svc.MergePlayers(ctx, src.ID, dst.ID)
+	switch {
+	case errors.Is(err, service.ErrMergeConflict), errors.Is(err, service.ErrMergeSelf), isNotFound(err):
+		h.toastOnly(w, r, toast.TypeError, "Could not merge", sentence(err))
+		return
+	case err != nil:
+		h.serverError(w, r, err)
+		return
+	}
+	v, err := h.adminPlayersView(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	render(w, r, http.StatusOK, views.PlayersMerged(v, "Merged "+src.Name+" into "+dst.Name))
 }
 
 func (h *Handler) pollPlayer(w http.ResponseWriter, r *http.Request) {

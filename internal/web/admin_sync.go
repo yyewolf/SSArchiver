@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
@@ -25,25 +24,34 @@ func (h *Handler) syncView(ctx context.Context) (views.SyncView, error) {
 	for _, p := range players {
 		if p.Enabled {
 			enabled++
-			if p.Counts.Pending > 0 {
-				withPending++
+		}
+		for _, id := range p.Identities {
+			for _, c := range id.Counts {
+				pending += c.Pending
+				failed += c.Failed
+			}
+			for _, f := range id.Feeds {
+				if p.Enabled && id.Enabled && f.Enabled && id.Counts[f.Feed].Pending > 0 {
+					withPending++
+				}
 			}
 		}
-		pending += p.Counts.Pending
-		failed += p.Counts.Failed
 	}
 	rate := service.ReplayRatePerHour(h.cfg.HourlyBudget, enabled, st.PollInterval)
-	rows := make([]views.QueueRow, 0, len(players))
+	var rows []views.QueueRow
 	for _, p := range players {
-		next := now
-		if s := p.Sync(); s.LastPolledAt != nil {
-			next = s.LastPolledAt.Add(st.PollInterval)
+		for _, id := range p.Identities {
+			for _, f := range id.Feeds {
+				q := views.QueueRow{Player: p, Identity: id, Feed: f, Counts: id.Counts[f.Feed], NextPoll: now}
+				if f.LastPolledAt != nil {
+					q.NextPoll = f.LastPolledAt.Add(st.PollInterval)
+				}
+				if p.Enabled && id.Enabled && f.Enabled && withPending > 0 {
+					q.ETA = service.ETA(q.Counts.Pending, rate/float64(withPending))
+				}
+				rows = append(rows, q)
+			}
 		}
-		var eta time.Duration
-		if p.Enabled && withPending > 0 {
-			eta = service.ETA(p.Counts.Pending, rate/float64(withPending))
-		}
-		rows = append(rows, views.QueueRow{Player: p, NextPoll: next, ETA: eta})
 	}
 	return views.SyncView{
 		Status: h.status.Status(), Paused: st.WorkerPaused, Queues: rows,
@@ -54,13 +62,16 @@ func (h *Handler) syncView(ctx context.Context) (views.SyncView, error) {
 func (h *Handler) eventsView(r *http.Request) (views.EventsView, error) {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
-	f := service.EventFilter{Level: q.Get("level"), Kind: q.Get("kind"), PlayerID: q.Get("player"), Page: max(page, 1), PerPage: 50}
+	f := service.EventFilter{
+		Level: q.Get("level"), Kind: q.Get("kind"), PlayerID: q.Get("player"),
+		Platform: q.Get("platform"), Feed: q.Get("feed"), Page: max(page, 1), PerPage: 50,
+	}
 	events, total, err := h.svc.ListEvents(r.Context(), f)
 	if err != nil {
 		return views.EventsView{}, err
 	}
 	players, err := h.svc.ListPlayers(r.Context(), true)
-	return views.EventsView{Events: events, Total: total, Filter: f, Players: players, Now: h.svc.Now()}, err
+	return views.EventsView{Events: events, Total: total, Filter: f, Players: players, Platforms: h.svc.Platforms().All(), Now: h.svc.Now()}, err
 }
 
 func (h *Handler) failedView(r *http.Request) (views.FailedView, error) {

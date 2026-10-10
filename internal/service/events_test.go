@@ -37,6 +37,22 @@ func TestListEvents(t *testing.T) {
 	}
 }
 
+func TestListEventsByPlatformAndFeed(t *testing.T) {
+	svc, _, _ := testutil.NewService(t)
+	ctx := context.Background()
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindPoll, Platform: new("testplat"), Feed: new(model.KindScore), Message: "tp score"})
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindPoll, Platform: new("testplat"), Feed: new(model.KindAttempt), Message: "tp attempt"})
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, Message: "global"})
+	tp, total, _ := svc.ListEvents(ctx, service.EventFilter{Platform: "testplat"})
+	if total != 2 || tp[0].Message != "tp attempt" {
+		t.Fatalf("platform filter = %v", tp)
+	}
+	att, total, _ := svc.ListEvents(ctx, service.EventFilter{Feed: model.KindAttempt})
+	if total != 1 || att[0].Message != "tp attempt" {
+		t.Fatalf("feed filter = %v", att)
+	}
+}
+
 func TestPruneEvents(t *testing.T) {
 	svc, _, clk := testutil.NewService(t)
 	ctx := context.Background()

@@ -41,8 +41,8 @@ const (
 )
 
 type EventFilter struct {
-	Level, Kind, PlayerID string
-	Page, PerPage         int
+	Level, Kind, PlayerID, Platform, Feed string
+	Page, PerPage                         int
 }
 
 func (s *Service) ListEvents(ctx context.Context, f EventFilter) ([]*model.SyncEvent, int64, error) {
@@ -61,6 +61,12 @@ func (s *Service) ListEvents(ctx context.Context, f EventFilter) ([]*model.SyncE
 	}
 	if f.PlayerID != "" {
 		do = do.Where(e.PlayerID.Eq(f.PlayerID))
+	}
+	if f.Platform != "" {
+		do = do.Where(e.Platform.Eq(f.Platform))
+	}
+	if f.Feed != "" {
+		do = do.Where(e.Feed.Eq(f.Feed))
 	}
 	items, total, err := do.Order(e.ID.Desc()).FindByPage((f.Page-1)*f.PerPage, f.PerPage)
 	if err != nil {
