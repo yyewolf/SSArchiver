@@ -57,9 +57,11 @@ func (s *Service) MergePlayers(ctx context.Context, sourceID, intoID string) err
 	if err != nil {
 		return fmt.Errorf("service: merge: %w", err)
 	}
+	locatable := true
 	for _, sc := range archived {
 		from, err := s.replayLoc(sc)
 		if err != nil {
+			locatable = false
 			continue // a platform that is no longer registered: its rows move, its files stay put
 		}
 		to := from
@@ -75,7 +77,9 @@ func (s *Service) MergePlayers(ctx context.Context, sourceID, intoID string) err
 	}
 
 	// 3. The source directory now only holds duplicates.
-	if err := s.store.RemovePlayer(sourceID); err != nil {
+	if !locatable { // some archived files could not be located: keep the whole directory
+		slog.Warn("merge: source replay directory kept because some archived replays could not be located", "player", sourceID)
+	} else if err := s.store.RemovePlayer(sourceID); err != nil {
 		slog.Warn("merge: source replay directory left behind", "player", sourceID, "err", err)
 	}
 	s.Log(ctx, model.SyncEvent{
