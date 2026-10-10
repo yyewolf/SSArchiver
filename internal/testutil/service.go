@@ -2,10 +2,13 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/alexedwards/argon2id"
+	"gorm.io/gorm"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
@@ -28,8 +31,17 @@ func ScoreFeed(t testing.TB, svc *service.Service, playerID string) model.SyncFe
 	return sum.Sync()
 }
 
-// NewService returns a Service over a temp DB/store with a fake clock and resolver.
+// NewService returns a Service over a temp DB/store with a fake clock and
+// resolver. Player IDs are p00000000001, p00000000002, … in creation order.
 func NewService(t testing.TB) (*service.Service, *Resolver, *Clock) {
+	t.Helper()
+	svc, _, res, clk := NewServiceWithDB(t)
+	return svc, res, clk
+}
+
+// NewServiceWithDB is NewService that also returns the database, for tests
+// that need rows the service cannot create.
+func NewServiceWithDB(t testing.TB) (*service.Service, *gorm.DB, *Resolver, *Clock) {
 	t.Helper()
 	gdb := OpenDB(t)
 	store, err := storage.New(filepath.Join(t.TempDir(), "replays"))
@@ -44,5 +56,17 @@ func NewService(t testing.TB) (*service.Service, *Resolver, *Clock) {
 	service.PasswordParams = &argon2id.Params{Memory: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	clk := NewClock(T0)
 	svc.SetClock(clk.Now)
-	return svc, res, clk
+	var n atomic.Int64
+	svc.SetIDGenerator(func() string { return fmt.Sprintf("p%011d", n.Add(1)) })
+	return svc, gdb, res, clk
+}
+
+// AddPlayer adds a player by ScoreSaber ID or URL and returns its player ID.
+func AddPlayer(t testing.TB, svc *service.Service, ref string) string {
+	t.Helper()
+	p, err := svc.AddPlayer(context.Background(), ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.ID
 }

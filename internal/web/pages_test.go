@@ -38,10 +38,10 @@ func TestHomeListsPlayersWithSecurityHeaders(t *testing.T) {
 	e.setup()
 	empty := e.do(http.MethodGet, "/", nil)
 	contains(t, empty.Body.String(), "No players yet")
-	e.seed()
+	a := e.seed()
 	rec := e.do(http.MethodGet, "/", nil)
 	body := rec.Body.String()
-	contains(t, body, "Alice", `href="/p/1001"`, "/static/css/app.css?v=", "data-theme-toggle")
+	contains(t, body, "Alice", `href="/p/`+a+`"`, "/static/css/app.css?v=", "data-theme-toggle")
 	csp := rec.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "frame-ancestors 'none'") || !strings.Contains(csp, "'nonce-") {
 		t.Fatalf("csp = %q", csp)

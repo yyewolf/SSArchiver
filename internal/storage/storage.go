@@ -1,4 +1,4 @@
-// Package storage stores replay files on disk as {root}/{player}/{score}.dat.
+// Package storage stores replay files on disk under {root}/{player}/.
 package storage
 
 import (
@@ -10,9 +10,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/yyewolf/ssarchiver/internal/platform"
 )
 
 var (
@@ -21,10 +22,9 @@ var (
 	ErrInvalidID = errors.New("storage: invalid player id")
 )
 
-var playerIDRe = regexp.MustCompile(`^[0-9]{1,32}$`)
-
-// ValidPlayerID reports whether id is a ScoreSaber player id (digits only).
-func ValidPlayerID(id string) bool { return playerIDRe.MatchString(id) }
+// ValidPlayerID reports whether id is a well-formed player ID (legacy
+// all-digit or opaque); see platform.ValidPlayerID.
+func ValidPlayerID(id string) bool { return platform.ValidPlayerID(id) }
 
 type Store struct{ root string }
 

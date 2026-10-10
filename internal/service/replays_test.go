@@ -12,19 +12,19 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
-func seedQueue(t *testing.T) (*service.Service, *testutil.Clock) {
+func seedQueue(t *testing.T) (*service.Service, *testutil.Clock, string, string) {
 	t.Helper()
 	svc, _, clk := testutil.NewService(t)
 	ctx := context.Background()
-	mustAdd(t, svc, "1001") // added at T0
-	mustAdd(t, svc, "1002")
+	a := mustAdd(t, svc, "1001") // added at T0
+	b := mustAdd(t, svc, "1002")
 	items := map[string][]scoresaber.ScoreItem{
-		"1001": {
+		a: {
 			testutil.Item("1001", 1, 11, testutil.T0.Add(time.Minute), true),
 			testutil.Item("1001", 2, 12, testutil.T0.Add(2*time.Minute), true),
 			testutil.Item("1001", 3, 13, testutil.T0.Add(-time.Hour), true),
 		},
-		"1002": {
+		b: {
 			testutil.Item("1002", 4, 14, testutil.T0.Add(3*time.Minute), true),
 			testutil.Item("1002", 5, 15, testutil.T0.Add(-2*time.Hour), true),
 		},
@@ -34,7 +34,7 @@ func seedQueue(t *testing.T) (*service.Service, *testutil.Clock) {
 			t.Fatal(err)
 		}
 	}
-	return svc, clk
+	return svc, clk, a, b
 }
 
 func nextID(t *testing.T, svc *service.Service, tier service.ReplayTier, last string) int64 {
@@ -53,21 +53,21 @@ func nextID(t *testing.T, svc *service.Service, tier service.ReplayTier, last st
 }
 
 func TestNextReplayTiersAndRoundRobin(t *testing.T) {
-	svc, clk := seedQueue(t)
+	svc, clk, a, b := seedQueue(t)
 	ctx := context.Background()
 	if got := nextID(t, svc, service.TierNew, ""); got != 2 {
 		t.Fatalf("new/'' = %d, want 2 (Alice newest)", got)
 	}
-	if got := nextID(t, svc, service.TierNew, "1001"); got != 4 {
+	if got := nextID(t, svc, service.TierNew, a); got != 4 {
 		t.Fatalf("new/after Alice = %d, want 4 (Bob)", got)
 	}
-	if got := nextID(t, svc, service.TierNew, "1002"); got != 2 {
+	if got := nextID(t, svc, service.TierNew, b); got != 2 {
 		t.Fatalf("new/after Bob = %d, want 2 (wrap to Alice)", got)
 	}
 	if got := nextID(t, svc, service.TierBackfill, ""); got != 3 {
 		t.Fatalf("backfill/'' = %d, want 3", got)
 	}
-	if err := svc.SetPlayerEnabled(ctx, "1001", false); err != nil {
+	if err := svc.SetPlayerEnabled(ctx, a, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := nextID(t, svc, service.TierNew, ""); got != 4 {
@@ -86,13 +86,13 @@ func TestNextReplayTiersAndRoundRobin(t *testing.T) {
 }
 
 func TestNextReplaySkipsBusyPlatform(t *testing.T) {
-	svc, _ := seedQueue(t)
+	svc, _, a, _ := seedQueue(t)
 	ctx := context.Background()
 	busy := service.Busy{{Platform: model.PlatformScoreSaber, Kind: model.KindScore}: true}
 	if s, err := svc.NextReplay(ctx, service.TierNew, "", busy); err != nil || s != nil {
 		t.Fatalf("busy platform must be skipped, got %+v %v", s, err)
 	}
-	if err := svc.MarkIdentityError(ctx, "1001", model.PlatformScoreSaber, "gone", true); err != nil {
+	if err := svc.MarkIdentityError(ctx, a, model.PlatformScoreSaber, "gone", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := nextID(t, svc, service.TierNew, ""); got != 4 {
@@ -101,7 +101,7 @@ func TestNextReplaySkipsBusyPlatform(t *testing.T) {
 }
 
 func TestMarkReplayAttemptFailedBackoff(t *testing.T) {
-	svc, clk := seedQueue(t)
+	svc, clk, _, _ := seedQueue(t)
 	ctx := context.Background()
 	wants := []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour}
 	for i, want := range wants {
@@ -133,7 +133,7 @@ func TestMarkReplayAttemptFailedBackoff(t *testing.T) {
 }
 
 func TestMarkReplayGoneAndArchived(t *testing.T) {
-	svc, clk := seedQueue(t)
+	svc, clk, _, _ := seedQueue(t)
 	ctx := context.Background()
 	if err := svc.MarkReplayGone(ctx, 1); err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestMarkReplayGoneAndArchived(t *testing.T) {
 }
 
 func TestNextRetryAt(t *testing.T) {
-	svc, clk := seedQueue(t)
+	svc, clk, _, _ := seedQueue(t)
 	ctx := context.Background()
 	if _, ok, _ := svc.NextRetryAt(ctx); ok {
 		t.Fatal("no deferred scores yet")

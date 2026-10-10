@@ -50,13 +50,13 @@ func TestReplayDownload(t *testing.T) {
 func TestReplayNotServed(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
-	e.seed()
+	a := e.seed()
 	for _, p := range []string{"/r/2.dat", "/r/3.dat", "/r/999.dat", "/r/abc.dat", "/r/1", "/r/0.dat"} {
 		if rec := e.do(http.MethodGet, p, nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s = %d, want 404", p, rec.Code)
 		}
 	}
-	if err := os.Remove(e.svc.Store().Path("1001", 1)); err != nil {
+	if err := os.Remove(e.svc.Store().Path(a, 1)); err != nil {
 		t.Fatal(err)
 	}
 	if rec := e.do(http.MethodGet, "/r/1.dat", nil); rec.Code != http.StatusNotFound {

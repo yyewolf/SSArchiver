@@ -96,10 +96,12 @@ func (e *testEnv) login() *http.Cookie {
 }
 
 // seed tracks Alice (1001) with three scores: 1 archived (file on disk), 2 pending, 3 without replay.
-func (e *testEnv) seed() {
+// It returns the new player's ID.
+func (e *testEnv) seed() string {
 	e.t.Helper()
 	ctx := context.Background()
-	if _, err := e.svc.AddPlayer(ctx, "1001"); err != nil {
+	p, err := e.svc.AddPlayer(ctx, "1001")
+	if err != nil {
 		e.t.Fatal(err)
 	}
 	items := []scoresaber.ScoreItem{
@@ -109,16 +111,17 @@ func (e *testEnv) seed() {
 	}
 	items[0].Leaderboard.Map.SongName = "Hell of a time"
 	items[0].Leaderboard.Realm.LeaderboardStatus = "RANKED"
-	if _, err := e.svc.UpsertScores(ctx, "1001", items); err != nil {
+	if _, err := e.svc.UpsertScores(ctx, p.ID, items); err != nil {
 		e.t.Fatal(err)
 	}
-	size, sum, err := e.svc.Store().Put("1001", 1, strings.NewReader("ScoreSaber Replay bytes"))
+	size, sum, err := e.svc.Store().Put(p.ID, 1, strings.NewReader("ScoreSaber Replay bytes"))
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	if err := e.svc.MarkReplayArchived(ctx, 1, size, sum); err != nil {
 		e.t.Fatal(err)
 	}
+	return p.ID
 }
 
 func contains(t *testing.T, body string, parts ...string) {

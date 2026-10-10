@@ -15,11 +15,9 @@ type scoreItem struct {
 	hasReplay bool
 }
 
-func mustAdd(t *testing.T, svc *service.Service, id string) {
+func mustAdd(t *testing.T, svc *service.Service, ref string) string {
 	t.Helper()
-	if _, err := svc.AddPlayer(context.Background(), id); err != nil {
-		t.Fatal(err)
-	}
+	return testutil.AddPlayer(t, svc, ref)
 }
 
 // upsert inserts items set one minute apart after the current fake time,

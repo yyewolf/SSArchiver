@@ -21,23 +21,24 @@ import (
 )
 
 // ready adds Alice with the given scores already listed and backfill done,
-// so the next Step goes straight to replay downloads.
-func ready(t *testing.T, e *env, items []scoresaber.ScoreItem) {
+// so the next Step goes straight to replay downloads. It returns the player ID.
+func ready(t *testing.T, e *env, items []scoresaber.ScoreItem) string {
 	t.Helper()
 	ctx := context.Background()
-	e.add(t, "1001")
-	if _, err := e.svc.UpsertScores(ctx, "1001", items); err != nil {
+	a := e.add(t, "1001")
+	if _, err := e.svc.UpsertScores(ctx, a, items); err != nil {
 		t.Fatal(err)
 	}
-	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001"))
-	_ = e.svc.SetFeedBackfill(ctx, testutil.ScoreFeedKey("1001"), model.BackfillDone, 2, 1)
+	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey(a))
+	_ = e.svc.SetFeedBackfill(ctx, testutil.ScoreFeedKey(a), model.BackfillDone, 2, 1)
 	e.fc.scores["1001"] = items
+	return a
 }
 
 func TestDownloadArchives(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
+	a := ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
 	if !e.step(t) {
 		t.Fatal("expected a download")
 	}
@@ -45,7 +46,7 @@ func TestDownloadArchives(t *testing.T) {
 	if s.ReplayState != model.ReplayArchived || s.ReplaySize != int64(len("replay-1")) || s.ReplaySHA256 == "" {
 		t.Fatalf("score = %+v", s)
 	}
-	b, err := os.ReadFile(e.svc.Store().Path("1001", 1))
+	b, err := os.ReadFile(e.svc.Store().Path(a, 1))
 	if err != nil || string(b) != "replay-1" {
 		t.Fatalf("file = %q, %v", b, err)
 	}
@@ -69,7 +70,7 @@ func TestDownload404MarksGone(t *testing.T) {
 func TestDownloadTransientErrorsBackOffThenFail(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
+	a := ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
 	e.fc.replayErr[1] = &scoresaber.StatusError{StatusCode: 502}
 	for i := 1; i <= service.MaxReplayAttempts; i++ {
 		if !e.step(t) {
@@ -79,7 +80,7 @@ func TestDownloadTransientErrorsBackOffThenFail(t *testing.T) {
 			t.Fatalf("attempt %d: retried before backoff elapsed", i)
 		}
 		e.clk.Advance(service.Backoff(i))
-		_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001")) // keep the poll from becoming due while time advances
+		_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey(a)) // keep the poll from becoming due while time advances
 	}
 	s, _ := e.svc.GetScore(ctx, 1)
 	if s.ReplayState != model.ReplayFailed || s.Attempts != service.MaxReplayAttempts {
@@ -90,7 +91,7 @@ func TestDownloadTransientErrorsBackOffThenFail(t *testing.T) {
 func TestDownloadMidStreamFailure(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
+	a := ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
 	e.fc.replayReader[1] = func() io.ReadCloser {
 		return io.NopCloser(io.MultiReader(strings.NewReader("ScoreSaber Replay partial"), iotest.ErrReader(errors.New("connection reset by peer"))))
 	}
@@ -99,7 +100,7 @@ func TestDownloadMidStreamFailure(t *testing.T) {
 	if s.ReplayState != model.ReplayPending || s.Attempts != 1 || !strings.Contains(s.LastError, "connection reset") {
 		t.Fatalf("score = %+v", s)
 	}
-	dir := filepath.Dir(e.svc.Store().Path("1001", 1))
+	dir := filepath.Dir(e.svc.Store().Path(a, 1))
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("leftover files after failed download: %v", entries)
@@ -124,8 +125,8 @@ func TestStorageErrorPausesWorker(t *testing.T) {
 	}
 	e := newEnv(t)
 	ctx := context.Background()
-	ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
-	root := filepath.Dir(filepath.Dir(e.svc.Store().Path("1001", 1)))
+	a := ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
+	root := filepath.Dir(filepath.Dir(e.svc.Store().Path(a, 1)))
 	if err := os.Chmod(root, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestStorageErrorPausesWorker(t *testing.T) {
 func TestStepPriority(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	e.add(t, "1001")
+	a := e.add(t, "1001")
 	e.fc.perPage = 1
 	newer := e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)) // after AddedAt → TierNew
 	older := e.fc.history("1001", 2, 5, testutil.T0.Add(-time.Hour))  // before AddedAt → TierBackfill; 6 pages in total
@@ -164,7 +165,7 @@ func TestStepPriority(t *testing.T) {
 	if got := e.fc.replaysCalled(); !slices.Equal(got, []int64{1, 2}) {
 		t.Fatalf("step 4 should download replay 2, got %v", got)
 	}
-	_ = e.svc.RequestPoll(ctx, "1001")
+	_ = e.svc.RequestPoll(ctx, a)
 	e.fc.reset()
 	e.step(t) // 5. a due poll beats everything
 	if got := e.fc.calls(); len(got) == 0 || got[0] != "1001:1" {

@@ -28,7 +28,7 @@ type SyncStatusOutput struct{ Body SyncStatus }
 
 type RetryInput struct {
 	Body struct {
-		PlayerID string `json:"player_id,omitempty" pattern:"^[0-9]{1,32}$"`
+		PlayerID string `json:"player_id,omitempty" pattern:"^[a-z0-9-]{1,40}$"`
 		ScoreID  int64  `json:"score_id,omitempty" minimum:"0"`
 	}
 }

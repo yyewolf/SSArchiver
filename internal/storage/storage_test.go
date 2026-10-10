@@ -71,10 +71,13 @@ func TestPutEmpty(t *testing.T) {
 
 func TestPutRejectsBadPlayerID(t *testing.T) {
 	s, _ := newStore(t)
-	for _, id := range []string{"../etc", "", "12a", "1/2"} {
+	for _, id := range []string{"../etc", "", "A1", "1/2", "a.b"} {
 		if _, _, err := s.Put(id, 1, strings.NewReader("x")); !errors.Is(err, storage.ErrInvalidID) {
 			t.Fatalf("Put(%q) err = %v", id, err)
 		}
+	}
+	if _, _, err := s.Put("k7m2q9x4c1ab", 1, strings.NewReader("x")); err != nil {
+		t.Fatalf("opaque IDs must be accepted: %v", err)
 	}
 }
 

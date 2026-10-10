@@ -10,7 +10,7 @@ import (
 )
 
 type PlayerPath struct {
-	ID string `path:"id" pattern:"^[0-9]{1,32}$" doc:"ScoreSaber player ID"`
+	ID string `path:"id" pattern:"^[a-z0-9-]{1,40}$" doc:"Player ID (opaque; see identities[] for platform IDs)"`
 }
 
 type PlayerOutput struct{ Body Player }

@@ -9,8 +9,8 @@ import (
 func TestPlayerPage(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
-	e.seed()
-	rec := e.do(http.MethodGet, "/p/1001", nil)
+	a := e.seed()
+	rec := e.do(http.MethodGet, "/p/"+a, nil)
 	if rec.Code != 200 {
 		t.Fatalf("code = %d", rec.Code)
 	}
@@ -21,8 +21,8 @@ func TestPlayerPage(t *testing.T) {
 func TestPlayerPageHTMXPartialAndFilters(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
-	e.seed()
-	rec := e.do(http.MethodGet, "/p/1001?state=archived", nil, htmx("scores"))
+	a := e.seed()
+	rec := e.do(http.MethodGet, "/p/"+a+"?state=archived", nil, htmx("scores"))
 	body := rec.Body.String()
 	if !strings.HasPrefix(strings.TrimSpace(body), `<div id="scores"`) || strings.Contains(body, "<html") {
 		t.Fatalf("expected a bare #scores partial, got:\n%s", body)
@@ -30,15 +30,15 @@ func TestPlayerPageHTMXPartialAndFilters(t *testing.T) {
 	if !strings.Contains(body, "Hell of a time") || strings.Contains(body, "Song 502") {
 		t.Fatalf("state filter not applied:\n%s", body)
 	}
-	search := e.do(http.MethodGet, "/p/1001?q=hell", nil, htmx("scores")).Body.String()
+	search := e.do(http.MethodGet, "/p/"+a+"?q=hell", nil, htmx("scores")).Body.String()
 	if !strings.Contains(search, "Hell of a time") || strings.Contains(search, "Song 503") {
 		t.Fatal("search filter not applied")
 	}
-	ranked := e.do(http.MethodGet, "/p/1001?ranked=1", nil, htmx("scores")).Body.String()
+	ranked := e.do(http.MethodGet, "/p/"+a+"?ranked=1", nil, htmx("scores")).Body.String()
 	if !strings.Contains(ranked, "Hell of a time") || strings.Contains(ranked, "Song 502") {
 		t.Fatal("ranked filter not applied")
 	}
-	none := e.do(http.MethodGet, "/p/1001?q=zzzz", nil, htmx("scores")).Body.String()
+	none := e.do(http.MethodGet, "/p/"+a+"?q=zzzz", nil, htmx("scores")).Body.String()
 	contains(t, none, "No scores match")
 }
 

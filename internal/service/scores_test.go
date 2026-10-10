@@ -13,8 +13,8 @@ import (
 
 func TestUpsertScoresStates(t *testing.T) {
 	svc, _, clk := testutil.NewService(t)
-	mustAdd(t, svc, "1001")
-	res := upsert(t, svc, "1001", clk, []scoreItem{{1, true}, {2, false}})
+	a := mustAdd(t, svc, "1001")
+	res := upsert(t, svc, a, clk, []scoreItem{{1, true}, {2, false}})
 	if res.New != 2 || res.Known != 0 || res.NewReplays != 1 {
 		t.Fatalf("result = %+v", res)
 	}
@@ -31,9 +31,9 @@ func TestUpsertScoresStates(t *testing.T) {
 func TestUpsertScoresPreservesArchiveState(t *testing.T) {
 	svc, _, _ := testutil.NewService(t)
 	ctx := context.Background()
-	mustAdd(t, svc, "1001")
+	a := mustAdd(t, svc, "1001")
 	item := testutil.Item("1001", 1, 1001, testutil.T0, true)
-	if _, err := svc.UpsertScores(ctx, "1001", []scoresaber.ScoreItem{item}); err != nil {
+	if _, err := svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item}); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.MarkReplayArchived(ctx, 1, 1234, "deadbeef"); err != nil {
@@ -41,7 +41,7 @@ func TestUpsertScoresPreservesArchiveState(t *testing.T) {
 	}
 	item.Score.Rank = 7
 	item.Score.PersonalBest = false
-	res, err := svc.UpsertScores(ctx, "1001", []scoresaber.ScoreItem{item})
+	res, err := svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,11 +60,11 @@ func TestUpsertScoresPreservesArchiveState(t *testing.T) {
 func TestUpsertScoresReplayAppearsLater(t *testing.T) {
 	svc, _, _ := testutil.NewService(t)
 	ctx := context.Background()
-	mustAdd(t, svc, "1001")
+	a := mustAdd(t, svc, "1001")
 	item := testutil.Item("1001", 1, 1001, testutil.T0, false)
-	_, _ = svc.UpsertScores(ctx, "1001", []scoresaber.ScoreItem{item})
+	_, _ = svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item})
 	item.Score.HasReplay = true
-	res, _ := svc.UpsertScores(ctx, "1001", []scoresaber.ScoreItem{item})
+	res, _ := svc.UpsertScores(ctx, a, []scoresaber.ScoreItem{item})
 	s, _ := svc.GetScore(ctx, 1)
 	if res.NewReplays != 1 || s.ReplayState != model.ReplayPending || !s.HasReplay {
 		t.Fatalf("res=%+v state=%s", res, s.ReplayState)
@@ -74,7 +74,7 @@ func TestUpsertScoresReplayAppearsLater(t *testing.T) {
 func TestListScoresFiltersAndPaging(t *testing.T) {
 	svc, _, _ := testutil.NewService(t)
 	ctx := context.Background()
-	mustAdd(t, svc, "1001")
+	a := mustAdd(t, svc, "1001")
 	var items []scoresaber.ScoreItem
 	for i := int64(1); i <= 5; i++ {
 		it := testutil.Item("1001", i, 1000+i, testutil.T0.Add(time.Duration(i)*time.Minute), i%2 == 1)
@@ -87,19 +87,19 @@ func TestListScoresFiltersAndPaging(t *testing.T) {
 		}
 		items = append(items, it)
 	}
-	if _, err := svc.UpsertScores(ctx, "1001", items); err != nil {
+	if _, err := svc.UpsertScores(ctx, a, items); err != nil {
 		t.Fatal(err)
 	}
 	_ = svc.MarkReplayArchived(ctx, 5, 1, "x")
 
-	all, err := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", PerPage: 2, Page: 1})
+	all, err := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, PerPage: 2, Page: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if all.Total != 5 || all.Pages != 3 || len(all.Items) != 2 || all.Items[0].ID != 5 || all.Items[0].Leaderboard == nil {
 		t.Fatalf("page 1 = %+v", all)
 	}
-	p3, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", PerPage: 2, Page: 3})
+	p3, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, PerPage: 2, Page: 3})
 	if len(p3.Items) != 1 || p3.Items[0].ID != 1 {
 		t.Fatalf("page 3 = %+v", p3.Items)
 	}
@@ -110,23 +110,23 @@ func TestListScoresFiltersAndPaging(t *testing.T) {
 		}
 		return out
 	}
-	search, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", Search: "ghost"})
+	search, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, Search: "ghost"})
 	if got := ids(search); len(got) != 2 || got[0] != 4 || got[1] != 2 {
 		t.Fatalf("search ids = %v, want [4 2] (song name + mapper match)", got)
 	}
-	ranked, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", RankedOnly: true})
+	ranked, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, RankedOnly: true})
 	if got := ids(ranked); len(got) != 1 || got[0] != 2 {
 		t.Fatalf("ranked ids = %v", got)
 	}
-	withReplay, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", State: service.FilterWithReplay})
+	withReplay, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, State: service.FilterWithReplay})
 	if withReplay.Total != 3 {
 		t.Fatalf("with replay total = %d", withReplay.Total)
 	}
-	archived, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", State: service.FilterArchived})
+	archived, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, State: service.FilterArchived})
 	if got := ids(archived); len(got) != 1 || got[0] != 5 {
 		t.Fatalf("archived ids = %v", got)
 	}
-	wild, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: "1001", Search: "%"})
+	wild, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: a, Search: "%"})
 	if wild.Total != 5 {
 		t.Fatalf("a bare %% must not act as a wildcard filter that drops rows: total = %d", wild.Total)
 	}
@@ -135,8 +135,8 @@ func TestListScoresFiltersAndPaging(t *testing.T) {
 func TestUpsertSetsPlatformColumns(t *testing.T) {
 	svc, _, clk := testutil.NewService(t)
 	ctx := context.Background()
-	mustAdd(t, svc, "1001")
-	upsert(t, svc, "1001", clk, []scoreItem{{id: 7, hasReplay: true}})
+	a := mustAdd(t, svc, "1001")
+	upsert(t, svc, a, clk, []scoreItem{{id: 7, hasReplay: true}})
 	sc, err := svc.GetScore(ctx, 7)
 	if err != nil {
 		t.Fatal(err)

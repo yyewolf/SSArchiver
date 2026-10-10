@@ -13,15 +13,16 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
-	"github.com/yyewolf/ssarchiver/internal/storage"
 )
 
 var playerURLRe = regexp.MustCompile(`^(?:https?://)?(?:www\.)?scoresaber\.com/u/([0-9]{1,32})(?:[/?#].*)?$`)
 
-// ParsePlayerRef extracts a player id from an id or a ScoreSaber profile URL.
+var ssIDRe = regexp.MustCompile(`^[0-9]{1,32}$`)
+
+// ParsePlayerRef extracts a ScoreSaber account ID from an ID or profile URL.
 func ParsePlayerRef(input string) (string, error) {
 	in := strings.TrimSpace(input)
-	if storage.ValidPlayerID(in) {
+	if ssIDRe.MatchString(in) {
 		return in, nil
 	}
 	if m := playerURLRe.FindStringSubmatch(in); m != nil {
@@ -181,14 +182,53 @@ func (s *Service) ResolvePlayer(ctx context.Context, input string) (scoresaber.P
 	return p, err
 }
 
+// PlayerByIdentity finds the player a platform account is linked to.
+func (s *Service) PlayerByIdentity(ctx context.Context, platformName, externalID string) (*model.Player, error) {
+	pp := s.q.PlayerPlatform
+	link, err := pp.WithContext(ctx).Where(pp.Platform.Eq(platformName), pp.ExternalID.Eq(externalID)).First()
+	if err != nil {
+		return nil, notFound(err, platformName+" account "+externalID)
+	}
+	return s.GetPlayer(ctx, link.PlayerID)
+}
+
+// freePlayerID draws IDs until one is used by neither a player nor an alias.
+func (s *Service) freePlayerID(ctx context.Context) (string, error) {
+	p, a := s.q.Player, s.q.PlayerAlias
+	for range 10 {
+		id := s.nextID()
+		np, err := p.WithContext(ctx).Where(p.ID.Eq(id)).Count()
+		if err != nil {
+			return "", fmt.Errorf("service: player id: %w", err)
+		}
+		na, err := a.WithContext(ctx).Where(a.OldID.Eq(id)).Count()
+		if err != nil {
+			return "", fmt.Errorf("service: player id: %w", err)
+		}
+		if np == 0 && na == 0 {
+			return id, nil
+		}
+	}
+	return "", errors.New("service: could not draw a free player ID")
+}
+
 func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, error) {
 	sp, err := s.ResolvePlayer(ctx, input)
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.PlayerByIdentity(ctx, model.PlatformScoreSaber, sp.ID); err == nil {
+		return nil, ErrPlayerExists
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	id, err := s.freePlayerID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	now := s.Now()
 	p := &model.Player{
-		ID: sp.ID, Name: sp.Name, AvatarURL: sp.Avatar, Country: sp.Country,
+		ID: id, Name: sp.Name, AvatarURL: sp.Avatar, Country: sp.Country,
 		Enabled: true, AddedAt: now,
 	}
 	err = s.q.Transaction(func(tx *query.Query) error {

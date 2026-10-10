@@ -13,9 +13,9 @@ import (
 func TestListEvents(t *testing.T) {
 	svc, _, clk := testutil.NewService(t)
 	ctx := context.Background()
-	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindScores, PlayerID: service.Ptr("1001"), Message: "a"})
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindScores, PlayerID: service.Ptr("paaaaaaaaaaa"), Message: "a"})
 	clk.Advance(time.Second)
-	svc.Log(ctx, model.SyncEvent{Level: model.LevelError, Kind: model.KindReplay, PlayerID: service.Ptr("1002"), Message: "b"})
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelError, Kind: model.KindReplay, PlayerID: service.Ptr("pbbbbbbbbbbb"), Message: "b"})
 	clk.Advance(time.Second)
 	svc.Log(ctx, model.SyncEvent{Level: model.LevelWarn, Kind: model.KindReplay, Message: "c"})
 
@@ -31,7 +31,7 @@ func TestListEvents(t *testing.T) {
 	if total != 2 || len(replay) != 1 || replay[0].Message != "b" {
 		t.Fatalf("kind filter page 2 = %v", replay)
 	}
-	alice, total, _ := svc.ListEvents(ctx, service.EventFilter{PlayerID: "1001"})
+	alice, total, _ := svc.ListEvents(ctx, service.EventFilter{PlayerID: "paaaaaaaaaaa"})
 	if total != 1 || alice[0].Message != "a" {
 		t.Fatalf("player filter = %v", alice)
 	}

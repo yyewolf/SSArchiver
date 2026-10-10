@@ -110,11 +110,9 @@ func newEnv(t *testing.T) *env {
 	return &env{svc: svc, clk: clk, fc: fc, w: archiver.New(svc, fc, nil)}
 }
 
-func (e *env) add(t *testing.T, id string) {
+func (e *env) add(t *testing.T, id string) string {
 	t.Helper()
-	if _, err := e.svc.AddPlayer(context.Background(), id); err != nil {
-		t.Fatal(err)
-	}
+	return testutil.AddPlayer(t, e.svc, id)
 }
 
 func (e *env) step(t *testing.T) bool {

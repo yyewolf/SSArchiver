@@ -118,6 +118,12 @@ func TestEndToEnd(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("add player: %s", body)
 	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil || created.ID == "" || created.ID == "1001" {
+		t.Fatalf("add player must return an opaque player ID: %q %v", created.ID, err)
+	}
 
 	// 3. the worker polls, lists and archives the replay
 	deadline := time.Now().Add(10 * time.Second)
@@ -151,7 +157,7 @@ func TestEndToEnd(t *testing.T) {
 	if !bytes.Equal(got, replayBytes) {
 		t.Fatalf("downloaded %q", got)
 	}
-	for _, p := range []string{"/", "/p/1001", "/s/777", "/healthz", "/api/docs"} {
+	for _, p := range []string{"/", "/p/" + created.ID, "/s/777", "/healthz", "/api/docs"} {
 		status, _, err := getBody(client, base+p)
 		if err != nil || status != 200 {
 			t.Fatalf("GET %s: %v %v", p, status, err)

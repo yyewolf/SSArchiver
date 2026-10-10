@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
@@ -36,6 +37,8 @@ func TestLookupPlayer(t *testing.T) {
 	e.seed()
 	tracked := e.do(http.MethodPost, "/admin/players/lookup", url.Values{"ref": {"1001"}}, withCookie(c), htmx("lookup-result"))
 	contains(t, tracked.Body.String(), "Already tracked")
+	trackedURL := e.do(http.MethodPost, "/admin/players/lookup", url.Values{"ref": {"https://scoresaber.com/u/1001?page=2"}}, withCookie(c), htmx("lookup-result"))
+	contains(t, trackedURL.Body.String(), "Already tracked")
 }
 
 func TestAddPlayer(t *testing.T) {
@@ -44,7 +47,8 @@ func TestAddPlayer(t *testing.T) {
 	rec := e.do(http.MethodPost, "/admin/players", url.Values{"ref": {"1002"}}, withCookie(c), htmx("admin-players"))
 	body := rec.Body.String()
 	contains(t, body, `id="admin-players"`, "Bob", "data-templ-toast", "Now tracking Bob", `id="lookup-result" hx-swap-oob`)
-	if _, err := e.svc.GetPlayer(context.Background(), "1002"); err != nil {
+	p, err := e.svc.PlayerByIdentity(context.Background(), model.PlatformScoreSaber, "1002")
+	if err != nil || p.Name != "Bob" {
 		t.Fatal("player not stored")
 	}
 	dup := e.do(http.MethodPost, "/admin/players", url.Values{"ref": {"1002"}}, withCookie(c), htmx("admin-players"))
@@ -57,31 +61,31 @@ func TestAddPlayer(t *testing.T) {
 func TestPlayerRowActions(t *testing.T) {
 	e := newEnv(t)
 	c := e.login()
-	e.seed()
+	a := e.seed()
 	ctx := context.Background()
-	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001"))
+	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey(a))
 
-	off := e.do(http.MethodPost, "/admin/players/1001/enabled", url.Values{"enabled": {"false"}}, withCookie(c), htmx("player-1001"))
-	contains(t, off.Body.String(), `id="player-1001"`, "Disabled", "Tracking paused")
-	if p, _ := e.svc.GetPlayer(ctx, "1001"); p.Enabled {
+	off := e.do(http.MethodPost, "/admin/players/"+a+"/enabled", url.Values{"enabled": {"false"}}, withCookie(c), htmx("player-"+a))
+	contains(t, off.Body.String(), `id="player-`+a+`"`, "Disabled", "Tracking paused")
+	if p, _ := e.svc.GetPlayer(ctx, a); p.Enabled {
 		t.Fatal("player still enabled")
 	}
 
-	poll := e.do(http.MethodPost, "/admin/players/1001/poll", url.Values{}, withCookie(c), htmx(""))
+	poll := e.do(http.MethodPost, "/admin/players/"+a+"/poll", url.Values{}, withCookie(c), htmx(""))
 	contains(t, poll.Body.String(), "Poll queued")
-	if f := testutil.ScoreFeed(t, e.svc, "1001"); f.LastPolledAt != nil {
+	if f := testutil.ScoreFeed(t, e.svc, a); f.LastPolledAt != nil {
 		t.Fatal("poll not requested")
 	}
 
-	del := e.do(http.MethodPost, "/admin/players/1001/delete", url.Values{"delete_files": {"on"}}, withCookie(c), htmx("player-1001"))
+	del := e.do(http.MethodPost, "/admin/players/"+a+"/delete", url.Values{"delete_files": {"on"}}, withCookie(c), htmx("player-"+a))
 	contains(t, del.Body.String(), "Stopped tracking Alice")
-	if strings.Contains(del.Body.String(), `id="player-1001"`) {
+	if strings.Contains(del.Body.String(), `id="player-`+a+`"`) {
 		t.Fatal("deleted row must be replaced with nothing")
 	}
-	if _, err := e.svc.Store().Open("1001", 1); err == nil {
+	if _, err := e.svc.Store().Open(a, 1); err == nil {
 		t.Fatal("replay files not deleted")
 	}
-	missing := e.do(http.MethodPost, "/admin/players/1001/poll", url.Values{}, withCookie(c), htmx(""))
+	missing := e.do(http.MethodPost, "/admin/players/"+a+"/poll", url.Values{}, withCookie(c), htmx(""))
 	contains(t, missing.Body.String(), "not found")
 }
 

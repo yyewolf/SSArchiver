@@ -63,39 +63,41 @@ func call(t *testing.T, h http.Handler, method, path string, body any) (int, map
 	return rec.Code, obj, arr
 }
 
-func seed(t *testing.T, svc *service.Service) {
+func seed(t *testing.T, svc *service.Service) string {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := svc.AddPlayer(ctx, "1001"); err != nil {
+	p, err := svc.AddPlayer(ctx, "1001")
+	if err != nil {
 		t.Fatal(err)
 	}
 	items := []scoresaber.ScoreItem{
 		testutil.Item("1001", 1, 501, testutil.T0.Add(2*time.Minute), true),
 		testutil.Item("1001", 2, 502, testutil.T0.Add(time.Minute), true),
 	}
-	if _, err := svc.UpsertScores(ctx, "1001", items); err != nil {
+	if _, err := svc.UpsertScores(ctx, p.ID, items); err != nil {
 		t.Fatal(err)
 	}
-	size, sum, _ := svc.Store().Put("1001", 1, strings.NewReader("replay"))
+	size, sum, _ := svc.Store().Put(p.ID, 1, strings.NewReader("replay"))
 	if err := svc.MarkReplayArchived(ctx, 1, size, sum); err != nil {
 		t.Fatal(err)
 	}
+	return p.ID
 }
 
 func TestPublicReads(t *testing.T) {
 	svc, h := newAPI(t, false)
-	seed(t, svc)
+	id := seed(t, svc)
 
 	code, _, players := call(t, h, http.MethodGet, "/api/v1/players", nil)
 	if code != 200 || len(players) != 1 {
 		t.Fatalf("list players = %d %v", code, players)
 	}
 	p := players[0].(map[string]any)
-	if p["name"] != "Alice" || p["replays"].(map[string]any)["archived"].(float64) != 1 || p["url"] != "https://replays.example.com/p/1001" {
+	if p["name"] != "Alice" || p["replays"].(map[string]any)["archived"].(float64) != 1 || p["url"] != "https://replays.example.com/p/"+id {
 		t.Fatalf("player = %v", p)
 	}
 
-	code, one, _ := call(t, h, http.MethodGet, "/api/v1/players/1001", nil)
+	code, one, _ := call(t, h, http.MethodGet, "/api/v1/players/"+id, nil)
 	ids, _ := one["identities"].([]any)
 	if code != 200 || len(ids) != 1 {
 		t.Fatalf("player = %d %v", code, one)
@@ -110,7 +112,7 @@ func TestPublicReads(t *testing.T) {
 		t.Fatalf("deprecated backfill must still be filled: %v", one["backfill"])
 	}
 
-	code, page, _ := call(t, h, http.MethodGet, "/api/v1/players/1001/scores?state=archived", nil)
+	code, page, _ := call(t, h, http.MethodGet, "/api/v1/players/"+id+"/scores?state=archived", nil)
 	items := page["items"].([]any)
 	if code != 200 || page["total"].(float64) != 1 || len(items) != 1 {
 		t.Fatalf("scores = %d %v", code, page)
@@ -130,11 +132,11 @@ func TestPublicReads(t *testing.T) {
 	}
 
 	for path, want := range map[string]int{
-		"/api/v1/players/9":                         404,
-		"/api/v1/players/9/scores":                  404,
-		"/api/v1/scores/999":                        404,
-		"/api/v1/players/1001/scores?per_page=1000": 422,
-		"/api/v1/players/1001/scores?state=bogus":   422,
+		"/api/v1/players/9":                               404,
+		"/api/v1/players/9/scores":                        404,
+		"/api/v1/scores/999":                              404,
+		"/api/v1/players/" + id + "/scores?per_page=1000": 422,
+		"/api/v1/players/" + id + "/scores?state=bogus":   422,
 	} {
 		if code, _, _ := call(t, h, http.MethodGet, path, nil); code != want {
 			t.Errorf("%s = %d, want %d", path, code, want)
@@ -168,16 +170,17 @@ func TestAdminWrites(t *testing.T) {
 	if code != 201 || p["name"] != "Bob" {
 		t.Fatalf("add = %d %v", code, p)
 	}
+	id := p["id"].(string)
 	for ref, want := range map[string]int{"1002": 409, "nope": 422, "9999": 404} {
 		if code, _, _ := call(t, h, http.MethodPost, "/api/v1/players", map[string]any{"ref": ref}); code != want {
 			t.Errorf("add %q = %d, want %d", ref, code, want)
 		}
 	}
-	code, p, _ = call(t, h, http.MethodPatch, "/api/v1/players/1002", map[string]any{"enabled": false})
+	code, p, _ = call(t, h, http.MethodPatch, "/api/v1/players/"+id, map[string]any{"enabled": false})
 	if code != 200 || p["enabled"] != false {
 		t.Fatalf("patch = %d %v", code, p)
 	}
-	if code, _, _ := call(t, h, http.MethodPost, "/api/v1/players/1002/poll", nil); code != 202 {
+	if code, _, _ := call(t, h, http.MethodPost, "/api/v1/players/"+id+"/poll", nil); code != 202 {
 		t.Fatalf("poll = %d", code)
 	}
 	code, st, _ := call(t, h, http.MethodGet, "/api/v1/sync", nil)
@@ -197,10 +200,10 @@ func TestAdminWrites(t *testing.T) {
 	if code != 200 || rr["requeued"].(float64) != 0 {
 		t.Fatalf("retry = %d %v", code, rr)
 	}
-	if code, _, _ := call(t, h, http.MethodDelete, "/api/v1/players/1002?delete_files=true", nil); code != 204 {
+	if code, _, _ := call(t, h, http.MethodDelete, "/api/v1/players/"+id+"?delete_files=true", nil); code != 204 {
 		t.Fatalf("delete = %d", code)
 	}
-	if code, _, _ := call(t, h, http.MethodDelete, "/api/v1/players/1002", nil); code != 404 {
+	if code, _, _ := call(t, h, http.MethodDelete, "/api/v1/players/"+id, nil); code != 404 {
 		t.Fatalf("second delete = %d", code)
 	}
 }

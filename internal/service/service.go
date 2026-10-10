@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/yyewolf/ssarchiver/internal/db/query"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/storage"
 )
@@ -35,6 +36,7 @@ type Service struct {
 
 	clockMu sync.RWMutex
 	now     func() time.Time
+	newID   func() string
 
 	wake chan struct{}
 }
@@ -46,6 +48,7 @@ func New(gdb *gorm.DB, store *storage.Store, ss Resolver) *Service {
 		store: store,
 		ss:    ss,
 		now:   func() time.Time { return time.Now().UTC() },
+		newID: platform.NewPlayerID,
 		wake:  make(chan struct{}, 1),
 	}
 }
@@ -61,6 +64,19 @@ func (s *Service) SetClock(now func() time.Time) {
 	s.clockMu.Lock()
 	s.now = now
 	s.clockMu.Unlock()
+}
+
+// SetIDGenerator replaces the player ID generator (tests).
+func (s *Service) SetIDGenerator(gen func() string) {
+	s.clockMu.Lock()
+	s.newID = gen
+	s.clockMu.Unlock()
+}
+
+func (s *Service) nextID() string {
+	s.clockMu.RLock()
+	defer s.clockMu.RUnlock()
+	return s.newID()
 }
 
 func (s *Service) Store() *storage.Store { return s.store }

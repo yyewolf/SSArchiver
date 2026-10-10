@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
@@ -59,7 +60,7 @@ func (h *Handler) lookupPlayer(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.FormError("ScoreSaber could not be reached: "+err.Error()))
 		return
 	}
-	_, gerr := h.svc.GetPlayer(r.Context(), sp.ID)
+	_, gerr := h.svc.PlayerByIdentity(r.Context(), model.PlatformScoreSaber, sp.ID)
 	render(w, r, http.StatusOK, views.PlayerPreview(sp, gerr == nil))
 }
 
