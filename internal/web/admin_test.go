@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
 func TestAdminRequiresLogin(t *testing.T) {
@@ -57,7 +59,7 @@ func TestPlayerRowActions(t *testing.T) {
 	c := e.login()
 	e.seed()
 	ctx := context.Background()
-	_ = e.svc.MarkPolled(ctx, "1001")
+	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001"))
 
 	off := e.do(http.MethodPost, "/admin/players/1001/enabled", url.Values{"enabled": {"false"}}, withCookie(c), htmx("player-1001"))
 	contains(t, off.Body.String(), `id="player-1001"`, "Disabled", "Tracking paused")
@@ -67,7 +69,7 @@ func TestPlayerRowActions(t *testing.T) {
 
 	poll := e.do(http.MethodPost, "/admin/players/1001/poll", url.Values{}, withCookie(c), htmx(""))
 	contains(t, poll.Body.String(), "Poll queued")
-	if p, _ := e.svc.GetPlayer(ctx, "1001"); p.LastPolledAt != nil {
+	if f := testutil.ScoreFeed(t, e.svc, "1001"); f.LastPolledAt != nil {
 		t.Fatal("poll not requested")
 	}
 

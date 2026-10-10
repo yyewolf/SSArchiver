@@ -293,9 +293,9 @@ templ queueCard(v SyncView) {
 										—
 									}
 								}
-								@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
-									{ backfillLabel(q.Player.Player) }
-								}
+							@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
+								{ backfillLabel(q.Player.Sync()) }
+							}
 								@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
 									{ Number(q.Player.Counts.Archived) }
 								}

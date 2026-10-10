@@ -88,12 +88,7 @@ func (h *Handler) addPlayer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) playerSummary(r *http.Request, id string) (service.PlayerSummary, error) {
-	p, err := h.svc.GetPlayer(r.Context(), id)
-	if err != nil {
-		return service.PlayerSummary{}, err
-	}
-	c, err := h.svc.PlayerCounts(r.Context(), id)
-	return service.PlayerSummary{Player: *p, Counts: c}, err
+	return h.svc.GetPlayerSummary(r.Context(), id)
 }
 
 func (h *Handler) setPlayerEnabled(w http.ResponseWriter, r *http.Request) {

@@ -36,8 +36,8 @@ func (h *Handler) syncView(ctx context.Context) (views.SyncView, error) {
 	rows := make([]views.QueueRow, 0, len(players))
 	for _, p := range players {
 		next := now
-		if p.LastPolledAt != nil {
-			next = p.LastPolledAt.Add(st.PollInterval)
+		if s := p.Sync(); s.LastPolledAt != nil {
+			next = s.LastPolledAt.Add(st.PollInterval)
 		}
 		var eta time.Duration
 		if p.Enabled && withPending > 0 {

@@ -23,6 +23,25 @@ type Backfill struct {
 	TotalPages int    `json:"total_pages"`
 }
 
+type Feed struct {
+	Kind         string     `json:"kind" enum:"score,attempt"`
+	Enabled      bool       `json:"enabled"`
+	Access       string     `json:"access" enum:"n/a,unknown,public,private"`
+	StartedAt    time.Time  `json:"started_at"`
+	LastPolledAt *time.Time `json:"last_polled_at,omitempty"`
+	LastError    string     `json:"last_error,omitempty"`
+	Backfill     Backfill   `json:"backfill"`
+}
+
+type Identity struct {
+	Platform  string    `json:"platform" example:"scoresaber"`
+	ID        string    `json:"id" doc:"The player's ID on that platform" example:"76561198038925092"`
+	Enabled   bool      `json:"enabled"`
+	LinkedAt  time.Time `json:"linked_at"`
+	LastError string    `json:"last_error,omitempty"`
+	Feeds     []Feed    `json:"feeds"`
+}
+
 type Player struct {
 	ID           string       `json:"id" example:"76561198059961776"`
 	Name         string       `json:"name"`
@@ -30,9 +49,10 @@ type Player struct {
 	Country      string       `json:"country"`
 	Enabled      bool         `json:"enabled"`
 	AddedAt      time.Time    `json:"added_at"`
-	LastPolledAt *time.Time   `json:"last_polled_at,omitempty"`
-	LastError    string       `json:"last_error,omitempty"`
-	Backfill     Backfill     `json:"backfill"`
+	LastPolledAt *time.Time   `json:"last_polled_at,omitempty" deprecated:"true" doc:"Deprecated: use identities[].feeds"`
+	LastError    string       `json:"last_error,omitempty" deprecated:"true" doc:"Deprecated: use identities[] and their feeds"`
+	Backfill     Backfill     `json:"backfill" deprecated:"true" doc:"Deprecated: use identities[].feeds"`
+	Identities   []Identity   `json:"identities"`
 	Replays      ReplayCounts `json:"replays"`
 	URL          string       `json:"url"`
 }
@@ -97,13 +117,26 @@ func difficultyName(d int) string {
 }
 
 func playerDTO(base string, p service.PlayerSummary) Player {
-	return Player{
+	sync := p.Sync()
+	out := Player{
 		ID: p.ID, Name: p.Name, AvatarURL: p.AvatarURL, Country: p.Country, Enabled: p.Enabled,
-		AddedAt: p.AddedAt, LastPolledAt: p.LastPolledAt, LastError: p.LastError,
-		Backfill: Backfill{State: p.BackfillState, NextPage: p.BackfillPage, TotalPages: p.BackfillTotalPages},
-		Replays:  ReplayCounts{Scores: p.Counts.Scores, Archived: p.Counts.Archived, Pending: p.Counts.Pending, Failed: p.Counts.Failed, Gone: p.Counts.Gone},
-		URL:      base + "/p/" + p.ID,
+		AddedAt: p.AddedAt, LastPolledAt: sync.LastPolledAt, LastError: p.Error(),
+		Backfill:   Backfill{State: sync.BackfillState, NextPage: sync.BackfillPage, TotalPages: sync.BackfillTotalPages},
+		Replays:    ReplayCounts{Scores: p.Counts.Scores, Archived: p.Counts.Archived, Pending: p.Counts.Pending, Failed: p.Counts.Failed, Gone: p.Counts.Gone},
+		URL:        base + "/p/" + p.ID,
+		Identities: make([]Identity, 0, len(p.Identities)),
 	}
+	for _, id := range p.Identities {
+		dto := Identity{Platform: id.Platform, ID: id.ExternalID, Enabled: id.Enabled, LinkedAt: id.LinkedAt, LastError: id.LastError, Feeds: make([]Feed, 0, len(id.Feeds))}
+		for _, f := range id.Feeds {
+			dto.Feeds = append(dto.Feeds, Feed{
+				Kind: f.Feed, Enabled: f.Enabled, Access: f.Access, StartedAt: f.StartedAt, LastPolledAt: f.LastPolledAt, LastError: f.LastError,
+				Backfill: Backfill{State: f.BackfillState, NextPage: f.BackfillPage, TotalPages: f.BackfillTotalPages},
+			})
+		}
+		out.Identities = append(out.Identities, dto)
+	}
+	return out
 }
 
 func scoreDTO(base string, s *model.Score) Score {

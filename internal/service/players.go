@@ -1,10 +1,12 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/yyewolf/ssarchiver/internal/db"
@@ -35,9 +37,136 @@ type Counts struct {
 // Replays is the number of scores ScoreSaber offered a replay for.
 func (c Counts) Replays() int64 { return c.Archived + c.Pending + c.Failed + c.Gone }
 
+// Identity is one linked platform account with its feeds.
+type Identity struct {
+	model.PlayerPlatform
+	Feeds []model.SyncFeed
+}
+
+// Feed returns the account's feed of the given kind (zero value when missing).
+func (i Identity) Feed(kind string) model.SyncFeed {
+	for _, f := range i.Feeds {
+		if f.Feed == kind {
+			return f
+		}
+	}
+	return model.SyncFeed{}
+}
+
 type PlayerSummary struct {
 	model.Player
-	Counts Counts
+	Counts     Counts
+	Identities []Identity // display order: the primary account first (spec §4.2)
+}
+
+// Sync is the primary account's score feed: the player's headline sync state.
+func (p PlayerSummary) Sync() model.SyncFeed {
+	if len(p.Identities) == 0 {
+		return model.SyncFeed{}
+	}
+	return p.Identities[0].Feed(model.KindScore)
+}
+
+// Error is the first account or feed error, for compact views.
+func (p PlayerSummary) Error() string {
+	for _, id := range p.Identities {
+		if id.LastError != "" {
+			return id.LastError
+		}
+		for _, f := range id.Feeds {
+			if f.LastError != "" {
+				return f.LastError
+			}
+		}
+	}
+	return ""
+}
+
+func (s *Service) updatePlayer(ctx context.Context, id string, upd map[string]any) error {
+	info, err := s.q.Player.WithContext(ctx).Where(s.q.Player.ID.Eq(id)).Updates(upd)
+	if err != nil {
+		return fmt.Errorf("service: update player %s: %w", id, err)
+	}
+	if info.RowsAffected == 0 {
+		return fmt.Errorf("%w: player %s", ErrNotFound, id)
+	}
+	return nil
+}
+
+// UpdatePlayerProfile refreshes name/avatar/country from score payloads; empty values are ignored.
+func (s *Service) UpdatePlayerProfile(ctx context.Context, id string, sp scoresaber.Player) error {
+	upd := map[string]any{}
+	if sp.Name != "" {
+		upd["name"] = sp.Name
+	}
+	if sp.Avatar != "" {
+		upd["avatar_url"] = sp.Avatar
+	}
+	if sp.Country != "" {
+		upd["country"] = sp.Country
+	}
+	if len(upd) == 0 {
+		return nil
+	}
+	return s.updatePlayer(ctx, id, upd)
+}
+
+// platformOrder ranks platforms for display: the legacy platform first.
+// Task 6 switches it to the registry's priorities.
+func (s *Service) platformOrder(name string) int {
+	if name == model.PlatformScoreSaber {
+		return 0
+	}
+	return 1
+}
+
+// identitiesBy loads accounts with their feeds, for one player or all.
+func (s *Service) identitiesBy(ctx context.Context, playerID string) (map[string][]Identity, error) {
+	pp, f := s.q.PlayerPlatform, s.q.SyncFeed
+	ido, fdo := pp.WithContext(ctx), f.WithContext(ctx)
+	if playerID != "" {
+		ido, fdo = ido.Where(pp.PlayerID.Eq(playerID)), fdo.Where(f.PlayerID.Eq(playerID))
+	}
+	ids, err := ido.Find()
+	if err != nil {
+		return nil, fmt.Errorf("service: load accounts: %w", err)
+	}
+	feeds, err := fdo.Order(f.Feed).Find()
+	if err != nil {
+		return nil, fmt.Errorf("service: load feeds: %w", err)
+	}
+	feedsOf := map[[2]string][]model.SyncFeed{}
+	for _, fd := range feeds {
+		k := [2]string{fd.PlayerID, fd.Platform}
+		feedsOf[k] = append(feedsOf[k], *fd)
+	}
+	out := map[string][]Identity{}
+	for _, id := range ids {
+		out[id.PlayerID] = append(out[id.PlayerID], Identity{PlayerPlatform: *id, Feeds: feedsOf[[2]string{id.PlayerID, id.Platform}]})
+	}
+	for pid := range out {
+		slices.SortFunc(out[pid], func(a, b Identity) int {
+			return cmp.Or(cmp.Compare(s.platformOrder(a.Platform), s.platformOrder(b.Platform)), cmp.Compare(a.Platform, b.Platform))
+		})
+	}
+	return out, nil
+}
+
+// GetPlayerSummary loads one player with counts and accounts.
+func (s *Service) GetPlayerSummary(ctx context.Context, id string) (PlayerSummary, error) {
+	p, err := s.GetPlayer(ctx, id)
+	if err != nil {
+		return PlayerSummary{}, err
+	}
+	counts, err := s.countsBy(ctx, id)
+	if err != nil {
+		return PlayerSummary{}, err
+	}
+	ids, err := s.identitiesBy(ctx, id)
+	if err != nil {
+		return PlayerSummary{}, err
+	}
+	return PlayerSummary{Player: *p, Counts: counts[id], Identities: ids[id]}, nil
 }
 
 func (s *Service) ResolvePlayer(ctx context.Context, input string) (scoresaber.Player, error) {
@@ -125,9 +254,13 @@ func (s *Service) ListPlayers(ctx context.Context, includeDisabled bool) ([]Play
 	if err != nil {
 		return nil, err
 	}
+	ids, err := s.identitiesBy(ctx, "")
+	if err != nil {
+		return nil, err
+	}
 	out := make([]PlayerSummary, 0, len(players))
 	for _, p := range players {
-		out = append(out, PlayerSummary{Player: *p, Counts: counts[p.ID]})
+		out = append(out, PlayerSummary{Player: *p, Counts: counts[p.ID], Identities: ids[p.ID]})
 	}
 	return out, nil
 }
@@ -183,6 +316,10 @@ func (s *Service) SetPlayerEnabled(ctx context.Context, id string, enabled bool)
 		return fmt.Errorf("%w: player %s", ErrNotFound, id)
 	}
 	if enabled {
+		pp := s.q.PlayerPlatform
+		if _, err := pp.WithContext(ctx).Where(pp.PlayerID.Eq(id)).Updates(map[string]any{"enabled": true, "last_error": ""}); err != nil {
+			return fmt.Errorf("service: enable accounts: %w", err)
+		}
 		s.Wake()
 	}
 	return nil
@@ -202,17 +339,5 @@ func (s *Service) DeletePlayer(ctx context.Context, id string, deleteFiles bool)
 		}
 	}
 	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: Ptr(id), Message: fmt.Sprintf("player deleted (files deleted: %v)", deleteFiles)})
-	return nil
-}
-
-func (s *Service) RequestPoll(ctx context.Context, id string) error {
-	info, err := s.q.Player.WithContext(ctx).Where(s.q.Player.ID.Eq(id)).Update(s.q.Player.LastPolledAt, nil)
-	if err != nil {
-		return fmt.Errorf("service: request poll: %w", err)
-	}
-	if info.RowsAffected == 0 {
-		return fmt.Errorf("%w: player %s", ErrNotFound, id)
-	}
-	s.Wake()
 	return nil
 }

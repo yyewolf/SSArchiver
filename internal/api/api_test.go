@@ -95,6 +95,21 @@ func TestPublicReads(t *testing.T) {
 		t.Fatalf("player = %v", p)
 	}
 
+	code, one, _ := call(t, h, http.MethodGet, "/api/v1/players/1001", nil)
+	ids, _ := one["identities"].([]any)
+	if code != 200 || len(ids) != 1 {
+		t.Fatalf("player = %d %v", code, one)
+	}
+	id0 := ids[0].(map[string]any)
+	feeds, _ := id0["feeds"].([]any)
+	if id0["platform"] != "scoresaber" || id0["id"] != "1001" || len(feeds) != 1 ||
+		feeds[0].(map[string]any)["kind"] != "score" || feeds[0].(map[string]any)["access"] != "n/a" {
+		t.Fatalf("identities = %v", ids)
+	}
+	if one["backfill"].(map[string]any)["state"] == "" {
+		t.Fatalf("deprecated backfill must still be filled: %v", one["backfill"])
+	}
+
 	code, page, _ := call(t, h, http.MethodGet, "/api/v1/players/1001/scores?state=archived", nil)
 	items := page["items"].([]any)
 	if code != 200 || page["total"].(float64) != 1 || len(items) != 1 {

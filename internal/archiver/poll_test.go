@@ -24,9 +24,9 @@ func TestFirstPollShortHistoryCompletesBackfill(t *testing.T) {
 	if got := e.fc.calls(); !slices.Equal(got, []string{"1001:1", "1001:2"}) {
 		t.Fatalf("calls = %v", got)
 	}
-	p, _ := e.svc.GetPlayer(context.Background(), "1001")
-	if p.BackfillState != model.BackfillDone || p.LastPolledAt == nil {
-		t.Fatalf("player = %+v", p)
+	f := testutil.ScoreFeed(t, e.svc, "1001")
+	if f.BackfillState != model.BackfillDone || f.LastPolledAt == nil {
+		t.Fatalf("feed = %+v", f)
 	}
 }
 
@@ -39,18 +39,18 @@ func TestFirstPollLongHistoryHandsOverToBackfill(t *testing.T) {
 	if got := e.fc.calls(); len(got) != 5 || got[4] != "1001:5" {
 		t.Fatalf("first poll calls = %v", got)
 	}
-	p, _ := e.svc.GetPlayer(ctx, "1001")
-	if p.BackfillState != model.BackfillPending || p.BackfillPage != 6 || p.BackfillTotalPages != 10 {
-		t.Fatalf("backfill = %s page %d/%d", p.BackfillState, p.BackfillPage, p.BackfillTotalPages)
+	f := testutil.ScoreFeed(t, e.svc, "1001")
+	if f.BackfillState != model.BackfillPending || f.BackfillPage != 6 || f.BackfillTotalPages != 10 {
+		t.Fatalf("backfill = %s page %d/%d", f.BackfillState, f.BackfillPage, f.BackfillTotalPages)
 	}
 	e.fc.reset()
 	e.drain(t, 100)
 	if got := e.fc.calls(); !slices.Equal(got, []string{"1001:6", "1001:7", "1001:8", "1001:9", "1001:10"}) {
 		t.Fatalf("backfill calls = %v", got)
 	}
-	p, _ = e.svc.GetPlayer(ctx, "1001")
-	if p.BackfillState != model.BackfillDone {
-		t.Fatalf("backfill state = %s", p.BackfillState)
+	f = testutil.ScoreFeed(t, e.svc, "1001")
+	if f.BackfillState != model.BackfillDone {
+		t.Fatalf("backfill state = %s", f.BackfillState)
 	}
 	c, _ := e.svc.PlayerCounts(ctx, "1001")
 	if c.Scores != 20 {
@@ -95,9 +95,9 @@ func TestPollCapResumesBackfill(t *testing.T) {
 	if got := e.fc.calls(); len(got) != 5 {
 		t.Fatalf("poll must stop at MaxPollPages, calls = %v", got)
 	}
-	p, _ := e.svc.GetPlayer(ctx, "1001")
-	if p.BackfillState != model.BackfillPending || p.BackfillPage != 6 {
-		t.Fatalf("backfill not resumed: %s page %d", p.BackfillState, p.BackfillPage)
+	f := testutil.ScoreFeed(t, e.svc, "1001")
+	if f.BackfillState != model.BackfillPending || f.BackfillPage != 6 {
+		t.Fatalf("backfill not resumed: %s page %d", f.BackfillState, f.BackfillPage)
 	}
 }
 
@@ -107,8 +107,8 @@ func TestPollRateLimitedDoesNotMarkPolled(t *testing.T) {
 	e.add(t, "1001")
 	e.fc.scoresErr["1001"] = fmt.Errorf("%w: test", scoresaber.ErrRateLimited)
 	e.step(t)
-	p, _ := e.svc.GetPlayer(ctx, "1001")
-	if p.LastPolledAt != nil {
+	f := testutil.ScoreFeed(t, e.svc, "1001")
+	if f.LastPolledAt != nil {
 		t.Fatal("a rate-limited poll must stay due")
 	}
 	evs, _, _ := e.svc.ListEvents(ctx, service.EventFilter{Kind: model.KindRateLimit})
@@ -117,15 +117,21 @@ func TestPollRateLimitedDoesNotMarkPolled(t *testing.T) {
 	}
 }
 
-func TestPollPlayerNotFoundDisables(t *testing.T) {
+func TestPollPlayerNotFoundDisablesTheAccount(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	e.add(t, "1001")
 	e.fc.scoresErr["1001"] = fmt.Errorf("%w: gone", scoresaber.ErrNotFound)
 	e.step(t)
-	p, _ := e.svc.GetPlayer(ctx, "1001")
-	if p.Enabled || !strings.Contains(p.LastError, "not found") {
-		t.Fatalf("player = %+v", p)
+	sum, err := e.svc.GetPlayerSummary(ctx, "1001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sum.Enabled || sum.Identities[0].Enabled || !strings.Contains(sum.Error(), "not found") {
+		t.Fatalf("summary = %+v", sum)
+	}
+	if e.step(t) {
+		t.Fatal("a disabled account must not be polled again")
 	}
 }
 
@@ -133,29 +139,40 @@ func TestPollServerErrorRetriesNextInterval(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	e.add(t, "1001")
-	_ = e.svc.SetBackfill(ctx, "1001", model.BackfillDone, 2, 1) // isolate polling from backfill work
+	_ = e.svc.SetFeedBackfill(ctx, testutil.ScoreFeedKey("1001"), model.BackfillDone, 2, 1) // isolate polling from backfill work
 	e.fc.scoresErr["1001"] = &scoresaber.StatusError{StatusCode: 502, Body: "bad gateway"}
 	e.step(t)
-	p, _ := e.svc.GetPlayer(ctx, "1001")
-	if p.LastPolledAt == nil || !strings.Contains(p.LastError, "502") || !p.Enabled {
-		t.Fatalf("player = %+v", p)
+	f := testutil.ScoreFeed(t, e.svc, "1001")
+	if f.LastPolledAt == nil || !strings.Contains(f.LastError, "502") {
+		t.Fatalf("feed = %+v", f)
 	}
 	if e.step(t) {
 		t.Fatal("player must not be re-polled before the interval")
 	}
 }
 
-func TestBackfillErrorDefers(t *testing.T) {
+func TestPollEventsCarryPlatformAndFeed(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
+	e.add(t, "1001")
+	e.fc.scores["1001"] = e.fc.history("1001", 1, 2, testutil.T0.Add(-time.Hour))
+	e.step(t)
+	evs, _, _ := e.svc.ListEvents(ctx, service.EventFilter{Kind: model.KindScores})
+	if len(evs) != 1 || evs[0].Platform == nil || *evs[0].Platform != model.PlatformScoreSaber || evs[0].Feed == nil || *evs[0].Feed != model.KindScore {
+		t.Fatalf("events = %+v", evs)
+	}
+}
+
+func TestBackfillErrorDefers(t *testing.T) {
+	e := newEnv(t)
 	e.add(t, "1001")
 	e.fc.scores["1001"] = e.fc.history("1001", 1, 20, testutil.T0.Add(-time.Hour))
 	e.step(t) // first poll → backfill pending at page 6
 	e.fc.scoresErr["1001"] = &scoresaber.StatusError{StatusCode: 502}
 	e.drain(t, 100) // the backfill page fails once and is deferred (Task 9 also drains replay downloads here)
-	p, _ := e.svc.GetPlayer(ctx, "1001")
-	if p.BackfillRetryAt == nil || !p.BackfillRetryAt.Equal(e.clk.Now().Add(service.BackfillRetryDelay)) || !strings.Contains(p.LastError, "502") {
-		t.Fatalf("backfill not deferred: %+v", p)
+	f := testutil.ScoreFeed(t, e.svc, "1001")
+	if f.BackfillRetryAt == nil || !f.BackfillRetryAt.Equal(e.clk.Now().Add(service.BackfillRetryDelay)) || !strings.Contains(f.LastError, "502") {
+		t.Fatalf("backfill not deferred: %+v", f)
 	}
 	delete(e.fc.scoresErr, "1001")
 	e.clk.Advance(service.BackfillRetryDelay)

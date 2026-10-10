@@ -1,15 +1,32 @@
 package testutil
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
 	"github.com/alexedwards/argon2id"
 
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/storage"
 )
+
+// ScoreFeedKey is the key of a ScoreSaber account's score feed.
+func ScoreFeedKey(playerID string) service.FeedKey {
+	return service.FeedKey{PlayerID: playerID, Platform: model.PlatformScoreSaber, Kind: model.KindScore}
+}
+
+// ScoreFeed returns a player's headline score feed (PlayerSummary.Sync).
+func ScoreFeed(t testing.TB, svc *service.Service, playerID string) model.SyncFeed {
+	t.Helper()
+	sum, err := svc.GetPlayerSummary(context.Background(), playerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sum.Sync()
+}
 
 // NewService returns a Service over a temp DB/store with a fake clock and resolver.
 func NewService(t testing.TB) (*service.Service, *Resolver, *Clock) {

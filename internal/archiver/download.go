@@ -36,7 +36,10 @@ func humanBytes(n int64) string {
 func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 	w.setStatus(StateRunning, describe(sc))
 	ev := func(level, msg string) {
-		w.svc.Log(ctx, model.SyncEvent{Level: level, Kind: model.KindReplay, PlayerID: service.Ptr(sc.PlayerID), ScoreID: service.Ptr(sc.ID), Message: msg})
+		w.svc.Log(ctx, model.SyncEvent{
+			Level: level, Kind: model.KindReplay, PlayerID: service.Ptr(sc.PlayerID), ScoreID: service.Ptr(sc.ID),
+			Platform: service.Ptr(sc.Platform), Feed: service.Ptr(sc.Kind), Message: msg,
+		})
 	}
 	body, err := w.client.Replay(ctx, sc.ID)
 	if err == nil {

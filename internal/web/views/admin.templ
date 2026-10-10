@@ -23,19 +23,19 @@ type AdminPlayersView struct {
 	Now     time.Time
 }
 
-func lastPoll(p model.Player, now time.Time) string {
-	if p.LastPolledAt == nil {
+func lastPoll(f model.SyncFeed, now time.Time) string {
+	if f.LastPolledAt == nil {
 		return "never"
 	}
-	return TimeAgo(*p.LastPolledAt, now)
+	return TimeAgo(*f.LastPolledAt, now)
 }
 
-func backfillLabel(p model.Player) string {
-	switch p.BackfillState {
+func backfillLabel(f model.SyncFeed) string {
+	switch f.BackfillState {
 	case model.BackfillDone:
 		return "Complete"
 	case model.BackfillRunning:
-		return "Page " + strconv.Itoa(p.BackfillPage) + " of " + strconv.Itoa(max(p.BackfillTotalPages, p.BackfillPage))
+		return "Page " + strconv.Itoa(f.BackfillPage) + " of " + strconv.Itoa(max(f.BackfillTotalPages, f.BackfillPage))
 	}
 	return "Waiting"
 }
@@ -170,18 +170,18 @@ templ AdminPlayerRow(pl service.PlayerSummary, now time.Time) {
 					Disabled
 				}
 			}
-			if pl.LastError != "" {
-				<p class="mt-1 max-w-56 truncate text-xs text-destructive" title={ pl.LastError }>{ pl.LastError }</p>
+			if pl.Error() != "" {
+				<p class="mt-1 max-w-56 truncate text-xs text-destructive" title={ pl.Error() }>{ pl.Error() }</p>
 			}
 		}
 		@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
-			{ backfillLabel(pl.Player) }
+			{ backfillLabel(pl.Sync()) }
 		}
 		@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
 			{ Number(pl.Counts.Archived) } / { Number(pl.Counts.Replays()) }
 		}
 		@table.Cell(table.CellProps{Class: "hidden text-muted-foreground md:table-cell"}) {
-			{ lastPoll(pl.Player, now) }
+			{ lastPoll(pl.Sync(), now) }
 		}
 		@table.Cell(table.CellProps{Class: "text-right"}) {
 			<div class="flex items-center justify-end gap-1">

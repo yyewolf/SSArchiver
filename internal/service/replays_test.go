@@ -39,7 +39,7 @@ func seedQueue(t *testing.T) (*service.Service, *testutil.Clock) {
 
 func nextID(t *testing.T, svc *service.Service, tier service.ReplayTier, last string) int64 {
 	t.Helper()
-	s, err := svc.NextReplay(context.Background(), tier, last)
+	s, err := svc.NextReplay(context.Background(), tier, last, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +82,21 @@ func TestNextReplayTiersAndRoundRobin(t *testing.T) {
 	clk.Advance(time.Minute)
 	if got := nextID(t, svc, service.TierNew, ""); got != 4 {
 		t.Fatalf("deferred score not returned after backoff: %d", got)
+	}
+}
+
+func TestNextReplaySkipsBusyPlatform(t *testing.T) {
+	svc, _ := seedQueue(t)
+	ctx := context.Background()
+	busy := service.Busy{{Platform: model.PlatformScoreSaber, Kind: model.KindScore}: true}
+	if s, err := svc.NextReplay(ctx, service.TierNew, "", busy); err != nil || s != nil {
+		t.Fatalf("busy platform must be skipped, got %+v %v", s, err)
+	}
+	if err := svc.MarkIdentityError(ctx, "1001", model.PlatformScoreSaber, "gone", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextID(t, svc, service.TierNew, ""); got != 4 {
+		t.Fatalf("replays of a disabled account must be skipped, got %d", got)
 	}
 }
 

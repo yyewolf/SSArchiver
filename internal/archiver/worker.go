@@ -55,9 +55,9 @@ type Worker struct {
 	mu     sync.RWMutex
 	status Status
 
-	lastReplayPlayer   string
-	lastBackfillPlayer string
-	lastPrune          time.Time
+	lastReplayPlayer string
+	lastBackfillFeed string
+	lastPrune        time.Time
 }
 
 func New(svc *service.Service, c Client, l LimiterSource) *Worker {
@@ -127,34 +127,48 @@ func (w *Worker) Step(ctx context.Context) (did bool, err error) {
 	}
 	w.maybePrune(ctx)
 
-	p, err := w.svc.DuePlayer(ctx, st.PollInterval)
+	busy := w.busy()
+	wf, err := w.svc.DueFeed(ctx, st.PollInterval, busy)
 	if err != nil {
 		return false, err
 	}
-	if p != nil {
-		return true, w.poll(ctx, p)
+	if wf != nil {
+		return true, w.poll(ctx, wf)
 	}
-	if sc, err := w.svc.NextReplay(ctx, service.TierNew, w.lastReplayPlayer); err != nil {
+	if did, err := w.nextReplay(ctx, service.TierNew, busy); did || err != nil {
+		return did, err
+	}
+	if did, err := w.nextBackfill(ctx, true, busy); did || err != nil {
+		return did, err
+	}
+	if did, err := w.nextReplay(ctx, service.TierBackfill, busy); did || err != nil {
+		return did, err
+	}
+	if did, err := w.nextBackfill(ctx, false, busy); did || err != nil {
+		return did, err
+	}
+	return w.nextReplay(ctx, service.TierBackfillOther, busy)
+}
+
+// busy lists the (platform, kind) pairs whose limiter is not ready (Task 8).
+func (w *Worker) busy() service.Busy { return nil }
+
+func (w *Worker) nextReplay(ctx context.Context, tier service.ReplayTier, busy service.Busy) (bool, error) {
+	sc, err := w.svc.NextReplay(ctx, tier, w.lastReplayPlayer, busy)
+	if err != nil || sc == nil {
 		return false, err
-	} else if sc != nil {
-		w.lastReplayPlayer = sc.PlayerID
-		return true, w.download(ctx, sc)
 	}
-	bp, err := w.svc.NextBackfillPlayer(ctx, w.lastBackfillPlayer)
-	if err != nil {
+	w.lastReplayPlayer = sc.PlayerID
+	return true, w.download(ctx, sc)
+}
+
+func (w *Worker) nextBackfill(ctx context.Context, scores bool, busy service.Busy) (bool, error) {
+	wf, err := w.svc.NextBackfillFeed(ctx, w.lastBackfillFeed, scores, busy)
+	if err != nil || wf == nil {
 		return false, err
 	}
-	if bp != nil {
-		w.lastBackfillPlayer = bp.ID
-		return true, w.backfill(ctx, bp)
-	}
-	if sc, err := w.svc.NextReplay(ctx, service.TierBackfill, w.lastReplayPlayer); err != nil {
-		return false, err
-	} else if sc != nil {
-		w.lastReplayPlayer = sc.PlayerID
-		return true, w.download(ctx, sc)
-	}
-	return false, nil
+	w.lastBackfillFeed = wf.Key().String()
+	return true, w.backfill(ctx, wf)
 }
 
 func (w *Worker) idle(ctx context.Context) {

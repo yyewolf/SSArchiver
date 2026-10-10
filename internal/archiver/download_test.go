@@ -29,8 +29,8 @@ func ready(t *testing.T, e *env, items []scoresaber.ScoreItem) {
 	if _, err := e.svc.UpsertScores(ctx, "1001", items); err != nil {
 		t.Fatal(err)
 	}
-	_ = e.svc.MarkPolled(ctx, "1001")
-	_ = e.svc.SetBackfill(ctx, "1001", model.BackfillDone, 2, 1)
+	_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001"))
+	_ = e.svc.SetFeedBackfill(ctx, testutil.ScoreFeedKey("1001"), model.BackfillDone, 2, 1)
 	e.fc.scores["1001"] = items
 }
 
@@ -79,7 +79,7 @@ func TestDownloadTransientErrorsBackOffThenFail(t *testing.T) {
 			t.Fatalf("attempt %d: retried before backoff elapsed", i)
 		}
 		e.clk.Advance(service.Backoff(i))
-		_ = e.svc.MarkPolled(ctx, "1001") // keep the poll from becoming due while time advances
+		_ = e.svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001")) // keep the poll from becoming due while time advances
 	}
 	s, _ := e.svc.GetScore(ctx, 1)
 	if s.ReplayState != model.ReplayFailed || s.Attempts != service.MaxReplayAttempts {

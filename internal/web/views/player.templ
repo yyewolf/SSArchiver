@@ -20,6 +20,7 @@ import (
 
 type PlayerView struct {
 	Player *model.Player
+	Sync   model.SyncFeed
 	Counts service.Counts
 	Scores service.ScoreList
 	Filter service.ScoreFilter
@@ -48,7 +49,7 @@ templ PlayerPage(p Page, v PlayerView) {
 				@stat("Pending", Number(v.Counts.Pending))
 			</dl>
 		</div>
-		if v.Player.BackfillState != model.BackfillDone || v.Counts.Pending > 0 {
+		if v.Sync.BackfillState != model.BackfillDone || v.Counts.Pending > 0 {
 			@archiveProgress(v)
 		}
 		@scoreFilters(v)
@@ -71,10 +72,10 @@ templ archiveProgress(v PlayerView) {
 			}
 		}
 		<p class="text-xs text-muted-foreground">
-			{ Number(v.Counts.Archived) } of { Number(v.Counts.Replays()) } replays archived
-			if v.Player.BackfillState != model.BackfillDone {
-				· still listing older scores (page { strconv.Itoa(v.Player.BackfillPage) } of { strconv.Itoa(max(v.Player.BackfillTotalPages, v.Player.BackfillPage)) })
-			}
+		{ Number(v.Counts.Archived) } of { Number(v.Counts.Replays()) } replays archived
+		if v.Sync.BackfillState != model.BackfillDone {
+			· still listing older scores (page { strconv.Itoa(v.Sync.BackfillPage) } of { strconv.Itoa(max(v.Sync.BackfillTotalPages, v.Sync.BackfillPage)) })
+		}
 		</p>
 	</div>
 }

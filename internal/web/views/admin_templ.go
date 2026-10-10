@@ -31,19 +31,19 @@ type AdminPlayersView struct {
 	Now     time.Time
 }
 
-func lastPoll(p model.Player, now time.Time) string {
-	if p.LastPolledAt == nil {
+func lastPoll(f model.SyncFeed, now time.Time) string {
+	if f.LastPolledAt == nil {
 		return "never"
 	}
-	return TimeAgo(*p.LastPolledAt, now)
+	return TimeAgo(*f.LastPolledAt, now)
 }
 
-func backfillLabel(p model.Player) string {
-	switch p.BackfillState {
+func backfillLabel(f model.SyncFeed) string {
+	switch f.BackfillState {
 	case model.BackfillDone:
 		return "Complete"
 	case model.BackfillRunning:
-		return "Page " + strconv.Itoa(p.BackfillPage) + " of " + strconv.Itoa(max(p.BackfillTotalPages, p.BackfillPage))
+		return "Page " + strconv.Itoa(f.BackfillPage) + " of " + strconv.Itoa(max(f.BackfillTotalPages, f.BackfillPage))
 	}
 	return "Waiting"
 }
@@ -963,15 +963,15 @@ func AdminPlayerRow(pl service.PlayerSummary, now time.Time) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				if pl.LastError != "" {
+				if pl.Error() != "" {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<p class=\"mt-1 max-w-56 truncate text-xs text-destructive\" title=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var45 string
-					templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(pl.LastError)
+					templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(pl.Error())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/admin.templ`, Line: 174, Col: 83}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/admin.templ`, Line: 174, Col: 81}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 					if templ_7745c5c3_Err != nil {
@@ -982,9 +982,9 @@ func AdminPlayerRow(pl service.PlayerSummary, now time.Time) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var46 string
-					templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(pl.LastError)
+					templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(pl.Error())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/admin.templ`, Line: 174, Col: 100}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/admin.templ`, Line: 174, Col: 96}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 					if templ_7745c5c3_Err != nil {
@@ -1014,7 +1014,7 @@ func AdminPlayerRow(pl service.PlayerSummary, now time.Time) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var48 string
-				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(backfillLabel(pl.Player))
+				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(backfillLabel(pl.Sync()))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/admin.templ`, Line: 178, Col: 29}
 				}
@@ -1081,7 +1081,7 @@ func AdminPlayerRow(pl service.PlayerSummary, now time.Time) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var53 string
-				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(lastPoll(pl.Player, now))
+				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(lastPoll(pl.Sync(), now))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/admin.templ`, Line: 184, Col: 29}
 				}

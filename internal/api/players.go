@@ -7,7 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
-	"github.com/yyewolf/ssarchiver/internal/service"
 )
 
 type PlayerPath struct {
@@ -37,15 +36,11 @@ type DeletePlayerInput struct {
 }
 
 func (a *API) summary(ctx context.Context, id string) (Player, error) {
-	p, err := a.svc.GetPlayer(ctx, id)
+	sum, err := a.svc.GetPlayerSummary(ctx, id)
 	if err != nil {
 		return Player{}, err
 	}
-	c, err := a.svc.PlayerCounts(ctx, id)
-	if err != nil {
-		return Player{}, err
-	}
-	return playerDTO(httpx.BaseURLFrom(ctx), service.PlayerSummary{Player: *p, Counts: c}), nil
+	return playerDTO(httpx.BaseURLFrom(ctx), sum), nil
 }
 
 func (a *API) registerPlayers() {

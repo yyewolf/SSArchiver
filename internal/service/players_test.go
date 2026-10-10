@@ -40,7 +40,7 @@ func TestAddPlayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "Alice" || !p.Enabled || p.BackfillState != model.BackfillPending || p.BackfillPage != 1 || !p.AddedAt.Equal(testutil.T0) {
+	if p.Name != "Alice" || !p.Enabled || !p.AddedAt.Equal(testutil.T0) {
 		t.Fatalf("unexpected player: %+v", p)
 	}
 	select {
@@ -117,14 +117,13 @@ func TestRequestPollWakesAndClearsLastPolled(t *testing.T) {
 	ctx := context.Background()
 	mustAdd(t, svc, "1001")
 	<-svc.WakeC()
-	if err := svc.MarkPolled(ctx, "1001"); err != nil {
+	if err := svc.MarkFeedPolled(ctx, testutil.ScoreFeedKey("1001")); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.RequestPoll(ctx, "1001"); err != nil {
 		t.Fatal(err)
 	}
-	p, _ := svc.GetPlayer(ctx, "1001")
-	if p.LastPolledAt != nil {
+	if f := testutil.ScoreFeed(t, svc, "1001"); f.LastPolledAt != nil {
 		t.Fatal("RequestPoll must clear last_polled_at")
 	}
 	select {

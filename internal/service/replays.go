@@ -15,8 +15,9 @@ import (
 type ReplayTier int
 
 const (
-	TierNew      ReplayTier = iota // scores set after the player was added
-	TierBackfill                   // historical scores
+	TierNew           ReplayTier = iota // plays set at or after their feed started
+	TierBackfill                        // older scores
+	TierBackfillOther                   // older plays of other kinds (attempts)
 )
 
 const MaxReplayAttempts = 5
@@ -29,31 +30,43 @@ func Backoff(attempt int) time.Duration {
 	return backoffSchedule[i]
 }
 
-func (s *Service) replayCandidates(ctx context.Context, tier ReplayTier) query.IScoreDo {
-	q, p := s.q.Score, s.q.Player
+func (s *Service) replayCandidates(ctx context.Context, tier ReplayTier, busy Busy) query.IScoreDo {
+	q, p, pp, f := s.q.Score, s.q.Player, s.q.PlayerPlatform, s.q.SyncFeed
 	now := s.Now()
-	do := q.WithContext(ctx).Join(p, p.ID.EqCol(q.PlayerID)).
-		Where(q.ReplayState.Eq(model.ReplayPending), p.Enabled.Is(true)).
+	do := q.WithContext(ctx).
+		Join(p, p.ID.EqCol(q.PlayerID)).
+		Join(pp, pp.PlayerID.EqCol(q.PlayerID), pp.Platform.EqCol(q.Platform)).
+		Join(f, f.PlayerID.EqCol(q.PlayerID), f.Platform.EqCol(q.Platform), f.Feed.EqCol(q.Kind)).
+		Where(q.ReplayState.Eq(model.ReplayPending), p.Enabled.Is(true), pp.Enabled.Is(true), f.Enabled.Is(true),
+			f.Access.In(model.AccessNA, model.AccessPublic)).
 		Where(q.WithContext(ctx).Where(q.NextAttemptAt.IsNull()).Or(q.NextAttemptAt.Lte(now)))
-	if tier == TierNew {
-		return do.Where(q.SetAt.GteCol(p.AddedAt))
+	for pk := range busy {
+		do = do.Not(q.Platform.Eq(pk.Platform), q.Kind.Eq(pk.Kind))
 	}
-	return do.Where(q.SetAt.LtCol(p.AddedAt))
+	switch tier {
+	case TierNew:
+		return do.Where(q.SetAt.GteCol(f.StartedAt))
+	case TierBackfill:
+		return do.Where(q.SetAt.LtCol(f.StartedAt), q.Kind.Eq(model.KindScore))
+	default:
+		return do.Where(q.SetAt.LtCol(f.StartedAt), q.Kind.Neq(model.KindScore))
+	}
 }
 
 // NextReplay returns the newest pending replay of the next player (round
-// robin after lastPlayer) in the given tier, or nil when there is none.
-func (s *Service) NextReplay(ctx context.Context, tier ReplayTier, lastPlayer string) (*model.Score, error) {
+// robin after lastPlayer) in the given tier, skipping busy platforms; nil
+// when there is none.
+func (s *Service) NextReplay(ctx context.Context, tier ReplayTier, lastPlayer string, busy Busy) (*model.Score, error) {
 	q := s.q.Score
 	var ids []string
-	if err := s.replayCandidates(ctx, tier).Distinct(q.PlayerID).Order(q.PlayerID).Pluck(q.PlayerID, &ids); err != nil {
+	if err := s.replayCandidates(ctx, tier, busy).Distinct(q.PlayerID).Order(q.PlayerID).Pluck(q.PlayerID, &ids); err != nil {
 		return nil, fmt.Errorf("service: replay players: %w", err)
 	}
 	if len(ids) == 0 {
 		return nil, nil
 	}
 	pick := pickAfter(ids, lastPlayer)
-	sc, err := s.replayCandidates(ctx, tier).Select(q.ALL).Preload(q.Leaderboard, q.Player).
+	sc, err := s.replayCandidates(ctx, tier, busy).Select(q.ALL).Preload(q.Leaderboard, q.Player).
 		Where(q.PlayerID.Eq(pick)).Order(q.SetAt.Desc()).First()
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil

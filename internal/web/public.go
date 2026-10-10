@@ -13,7 +13,7 @@ import (
 func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
-	pl, err := h.svc.GetPlayer(ctx, id)
+	sum, err := h.svc.GetPlayerSummary(ctx, id)
 	if isNotFound(err) {
 		h.notFound(w, r, "This player is not archived here.")
 		return
@@ -22,6 +22,7 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	pl := &sum.Player
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	f := service.ScoreFilter{PlayerID: id, Search: q.Get("q"), RankedOnly: q.Get("ranked") == "1", Page: page, PerPage: 50}
@@ -33,12 +34,7 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	counts, err := h.svc.PlayerCounts(ctx, id)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	v := views.PlayerView{Player: pl, Counts: counts, Scores: list, Filter: f, Now: h.svc.Now()}
+	v := views.PlayerView{Player: pl, Sync: sum.Sync(), Counts: sum.Counts, Scores: list, Filter: f, Now: h.svc.Now()}
 	if isHTMX(r) && r.Header.Get("HX-Target") == "scores" {
 		render(w, r, http.StatusOK, views.ScoreTable(v))
 		return
@@ -46,7 +42,7 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	p := h.page(r, pl.Name)
 	p.OG = &views.OpenGraph{
 		Title:       pl.Name + " · ScoreSaber replays",
-		Description: fmt.Sprintf("%s archived replays", views.Number(counts.Archived)),
+		Description: fmt.Sprintf("%s archived replays", views.Number(sum.Counts.Archived)),
 		Image:       pl.AvatarURL,
 		URL:         httpx.BaseURLFrom(ctx) + "/p/" + pl.ID,
 	}
