@@ -1,9 +1,14 @@
 package web_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
 func TestPlayerPage(t *testing.T) {
@@ -55,6 +60,107 @@ func TestPlayerPageHTMXPartialAndFilters(t *testing.T) {
 	}
 	none := e.do(http.MethodGet, "/p/"+a+"?q=zzzz", nil, htmx("scores")).Body.String()
 	contains(t, none, "No scores match")
+}
+
+// crossSeed is seed() plus Alice's testplat account: t1 on the same map as
+// ScoreSaber score 1 (map 501), and t0, an older non-PB play of that map.
+func (e *testEnv) crossSeed() string {
+	e.t.Helper()
+	a := e.seed()
+	if _, err := e.svc.LinkIdentity(context.Background(), a, "abc", "testplat"); err != nil {
+		e.t.Fatal(err)
+	}
+	t1 := testutil.FakePlay(model.KindScore, "t1", "lb-x501", testutil.T0.Add(4*time.Minute), true)
+	t1.Leaderboard.SongHash, t1.Leaderboard.GameMode, t1.Leaderboard.Difficulty = "hash501", "Standard", 9
+	t1.ModifiedScore = 950_000
+	t0 := testutil.FakePlay(model.KindScore, "t0", "lb-x501", testutil.T0.Add(-time.Hour), false)
+	t0.Leaderboard, t0.PersonalBest = t1.Leaderboard, false
+	testutil.UpsertFake(e.t, e.svc, a, t1, t0)
+	return a
+}
+
+func TestMergedPlayerPage(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	a := e.crossSeed()
+	body := e.do(http.MethodGet, "/p/"+a, nil).Body.String()
+	contains(t, body, `href="/s/1"`, `href="/s/tp/t1"`, "TestPlat", "ScoreSaber", "950,000",
+		`href="/p/ss/1001"`, `href="/p/tp/abc"`, `href="https://tp.example/u/abc"`, "TestPlat profile",
+		"1 more play", `hx-get="/p/`+a+`/map?key=hash501%2FStandard%2F9"`, `hx-target="#plays-0"`,
+		"ScoreSaber &amp; TestPlat replays", `name="platform"`, "All platforms", `name="min_score"`, `name="max_score"`)
+	if strings.Count(body, `href="/s/tp/t0"`) != 0 {
+		t.Fatal("non-PB plays are behind 'more plays', not chips")
+	}
+}
+
+func TestPlayerPageMapFragment(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	a := e.crossSeed()
+	frag := e.do(http.MethodGet, "/p/"+a+"/map?key=hash501%2FStandard%2F9", nil, htmx("plays-0"))
+	body := frag.Body.String()
+	if frag.Code != 200 || strings.Contains(body, "<html") {
+		t.Fatalf("fragment = %d\n%s", frag.Code, body)
+	}
+	contains(t, body, `href="/s/1"`, `href="/s/tp/t1"`, `href="/s/tp/t0"`, "superseded")
+	tpOnly := e.do(http.MethodGet, "/p/"+a+"/map?key=hash501%2FStandard%2F9&platform=testplat", nil, htmx("plays-0")).Body.String()
+	if strings.Contains(tpOnly, `href="/s/1"`) {
+		t.Fatal("the fragment applies the page's filters")
+	}
+	for _, p := range []string{"/p/" + a + "/map", "/p/nobody/map?key=x"} {
+		if rec := e.do(http.MethodGet, p, nil); rec.Code != http.StatusNotFound {
+			t.Errorf("%s = %d", p, rec.Code)
+		}
+	}
+}
+
+func TestPlayerPagePlatformAndScoreFilters(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	a := e.crossSeed()
+	get := func(q string) string {
+		return e.do(http.MethodGet, "/p/"+a+"?"+q, nil, htmx("scores")).Body.String()
+	}
+	tp := get("platform=testplat")
+	if !strings.Contains(tp, `href="/s/tp/t1"`) || strings.Contains(tp, `href="/s/1"`) || strings.Contains(tp, "Song 502") {
+		t.Fatalf("platform filter:\n%s", tp)
+	}
+	if high := get("min_score=960000"); !strings.Contains(high, "Song 502") {
+		t.Fatal("min_score keeps the ScoreSaber maps")
+	}
+	low := get("max_score=950000")
+	if strings.Contains(low, "Song 502") || !strings.Contains(low, `href="/s/tp/t1"`) {
+		t.Fatalf("max_score:\n%s", low)
+	}
+	if bad := get("platform=nope&min_score=abc"); !strings.Contains(bad, "Song 502") {
+		t.Fatal("unknown values are ignored, not errors")
+	}
+}
+
+func TestSinglePlatformPageHasNoPlatformFilter(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.seed()
+	if body := e.do(http.MethodGet, "/p/"+a, nil).Body.String(); strings.Contains(body, `name="platform"`) {
+		t.Fatal("the platform select only appears for players with several accounts")
+	}
+}
+
+func TestMergedAwayPlayerRedirects(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	a := e.seed()
+	tess := e.seedTP()
+	if err := e.svc.MergePlayers(context.Background(), tess, a); err != nil {
+		t.Fatal(err)
+	}
+	res := e.do(http.MethodGet, "/p/"+tess+"?page=2&q=x", nil)
+	if res.Code != http.StatusMovedPermanently || res.Header().Get("Location") != "/p/"+a+"?page=2&q=x" {
+		t.Fatalf("alias = %d %q", res.Code, res.Header().Get("Location"))
+	}
+	if loc := e.do(http.MethodGet, "/p/tp/abc", nil).Header().Get("Location"); loc != "/p/"+a {
+		t.Fatalf("account links follow the merge: %q", loc)
+	}
 }
 
 func TestPlayerNotFound(t *testing.T) {

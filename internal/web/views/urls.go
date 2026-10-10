@@ -10,7 +10,8 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/service"
 )
 
-func PlayerScoresURL(playerID string, f service.ScoreFilter, page int) string {
+// scoreQuery encodes the player page's filters (page excluded).
+func scoreQuery(f service.ScoreFilter) url.Values {
 	q := url.Values{}
 	if f.Search != "" {
 		q.Set("q", f.Search)
@@ -21,6 +22,20 @@ func PlayerScoresURL(playerID string, f service.ScoreFilter, page int) string {
 	if f.RankedOnly {
 		q.Set("ranked", "1")
 	}
+	if f.Platform != "" {
+		q.Set("platform", f.Platform)
+	}
+	if f.MinScore != nil {
+		q.Set("min_score", strconv.FormatInt(*f.MinScore, 10))
+	}
+	if f.MaxScore != nil {
+		q.Set("max_score", strconv.FormatInt(*f.MaxScore, 10))
+	}
+	return q
+}
+
+func PlayerScoresURL(playerID string, f service.ScoreFilter, page int) string {
+	q := scoreQuery(f)
 	if page > 1 {
 		q.Set("page", strconv.Itoa(page))
 	}
@@ -29,6 +44,13 @@ func PlayerScoresURL(playerID string, f service.ScoreFilter, page int) string {
 		u += "?" + enc
 	}
 	return u
+}
+
+// MapPlaysURL is the fragment with every play of one map, filters applied.
+func MapPlaysURL(playerID string, f service.ScoreFilter, mapKey string) string {
+	q := scoreQuery(f)
+	q.Set("key", mapKey)
+	return "/p/" + url.PathEscape(playerID) + "/map?" + q.Encode()
 }
 
 func EmbedSnippet(embedURL string) string {

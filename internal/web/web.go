@@ -60,6 +60,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /login", h.loginSubmit)
 	mux.HandleFunc("POST /logout", h.logout)
 	mux.HandleFunc("GET /p/{id}", h.player)
+	mux.HandleFunc("GET /p/{id}/map", h.playerMap)
 	mux.HandleFunc("GET /p/{slug}/{externalID}", h.accountLink)
 	mux.HandleFunc("GET /s/{id}", h.score)
 	mux.HandleFunc("GET /s/{slug}/{externalID}", h.platformScore(model.KindScore))

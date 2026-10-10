@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/avatar"
 	"github.com/yyewolf/ssarchiver/internal/web/components/badge"
@@ -19,19 +20,50 @@ import (
 )
 
 type PlayerView struct {
-	Player     *model.Player
-	Sync       model.SyncFeed
-	Counts     service.Counts
-	Scores     service.ScoreList
-	Filter     service.ScoreFilter
-	Now        time.Time
-	ProfileURL string // primary identity's external profile URL ("" when none)
-	Platform   string // primary identity's platform display name
+	Player    *model.Player
+	Summary   service.PlayerSummary
+	Groups    service.MapGroupList
+	Filter    service.ScoreFilter
+	Platforms []platform.Platform // the player's platforms, primary first
+	Now       time.Time
+}
+
+// listing are the accounts whose score feed is still walking its history.
+func (v PlayerView) listing() []service.Identity {
+	var out []service.Identity
+	for _, id := range v.Summary.Identities {
+		if f := id.Feed(model.KindScore); f.BackfillState != "" && f.BackfillState != model.BackfillDone {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func boundValue(p *int64) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatInt(*p, 10)
+}
+
+// extraPlays is how many plays a map row does not show.
+func extraPlays(g service.MapGroup) int64 {
+	if len(g.Chips) == 0 {
+		return max(g.Plays-1, 0) // the newest play stands in for the missing chips
+	}
+	return g.More()
+}
+
+func morePlaysLabel(n int64) string {
+	if n == 1 {
+		return "1 more play"
+	}
+	return Number(n) + " more plays"
 }
 
 templ PlayerPage(p Page, v PlayerView) {
 	@Layout(p) {
-		<div class="mb-8 flex flex-wrap items-center gap-4">
+		<div class="mb-6 flex flex-wrap items-center gap-4">
 			@avatar.Avatar(avatar.Props{Class: "size-14"}) {
 				@avatar.Image(avatar.ImageProps{Src: v.Player.AvatarURL, Alt: v.Player.Name})
 				@avatar.Fallback() {
@@ -40,21 +72,16 @@ templ PlayerPage(p Page, v PlayerView) {
 			}
 			<div class="min-w-0 flex-1">
 				<h1 class="truncate text-2xl font-semibold tracking-tight">{ v.Player.Name }</h1>
-				<p class="text-sm text-muted-foreground">
-					{ v.Player.Country }
-					if v.ProfileURL != "" {
-						·
-						<a class="underline-offset-4 hover:underline" href={ templ.SafeURL(v.ProfileURL) } target="_blank" rel="noopener">{ v.Platform } profile</a>
-					}
-				</p>
+				<p class="text-sm text-muted-foreground">{ v.Player.Country }</p>
 			</div>
 			<dl class="flex gap-8 text-sm">
-				@stat("Scores", Number(v.Counts.Scores))
-				@stat("Archived", Number(v.Counts.Archived))
-				@stat("Pending", Number(v.Counts.Pending))
+				@stat("Scores", Number(v.Summary.Counts.Scores))
+				@stat("Archived", Number(v.Summary.Counts.Archived))
+				@stat("Pending", Number(v.Summary.Counts.Pending))
 			</dl>
 		</div>
-		if v.Sync.BackfillState != model.BackfillDone || v.Counts.Pending > 0 {
+		@accounts(v)
+		if len(v.listing()) > 0 || v.Summary.Counts.Pending > 0 {
 			@archiveProgress(v)
 		}
 		@scoreFilters(v)
@@ -69,18 +96,41 @@ templ stat(label, value string) {
 	</div>
 }
 
+templ accounts(v PlayerView) {
+	<ul class="mb-6 flex flex-wrap gap-2 text-sm">
+		for _, id := range v.Summary.Identities {
+			<li class="flex items-center gap-2 rounded-lg border px-3 py-1.5">
+				@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+					{ PlatformName(ctx, id.Platform) }
+				}
+				<span class="tabular-nums text-muted-foreground">{ Number(id.Scores().Archived) } / { Number(id.Scores().Replays()) } replays</span>
+				<a class="underline-offset-4 hover:underline" href={ templ.SafeURL(ProfileURL(ctx, id.Platform, id.ExternalID)) } target="_blank" rel="noopener">{ PlatformName(ctx, id.Platform) } profile</a>
+				<a
+					class="text-muted-foreground hover:text-foreground"
+					href={ templ.SafeURL(AccountPath(ctx, id.Platform, id.ExternalID)) }
+					title="Shareable link to this account"
+					aria-label={ "Shareable " + PlatformName(ctx, id.Platform) + " link" }
+				>
+					@icon.Link2(icon.Props{Size: 14})
+				</a>
+			</li>
+		}
+	</ul>
+}
+
 templ archiveProgress(v PlayerView) {
 	<div class="mb-6 flex flex-col gap-2 rounded-lg border p-4">
-		@progress.Progress(progress.Props{Value: int(v.Counts.Archived), Max: max(int(v.Counts.Replays()), 1)}) {
+		@progress.Progress(progress.Props{Value: int(v.Summary.Counts.Archived), Max: max(int(v.Summary.Counts.Replays()), 1)}) {
 			@progress.Label() {
 				Archiving replays
 			}
 		}
 		<p class="text-xs text-muted-foreground">
-		{ Number(v.Counts.Archived) } of { Number(v.Counts.Replays()) } replays archived
-		if v.Sync.BackfillState != model.BackfillDone {
-			· still listing older scores (page { strconv.Itoa(v.Sync.BackfillPage) } of { strconv.Itoa(max(v.Sync.BackfillTotalPages, v.Sync.BackfillPage)) })
-		}
+			{ Number(v.Summary.Counts.Archived) } of { Number(v.Summary.Counts.Replays()) } replays archived
+			for _, id := range v.listing() {
+				{{ f := id.Feed(model.KindScore) }}
+				· still listing older { PlatformName(ctx, id.Platform) } scores (page { strconv.Itoa(f.BackfillPage) } of { strconv.Itoa(max(f.BackfillTotalPages, f.BackfillPage)) })
+			}
 		</p>
 	</div>
 }
@@ -103,6 +153,18 @@ templ scoreFilters(v PlayerView) {
 			</span>
 			@input.Input(input.Props{ID: "score-search", Name: "q", Type: "search", Value: v.Filter.Search, Placeholder: "Search song, artist or mapper", Class: "pl-8"})
 		</div>
+		if len(v.Platforms) > 1 {
+			@nativeselect.NativeSelect(nativeselect.Props{Name: "platform", Attributes: templ.Attributes{"aria-label": "Platform filter"}}) {
+				@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: v.Filter.Platform == ""}) {
+					All platforms
+				}
+				for _, pf := range v.Platforms {
+					@nativeselect.Option(nativeselect.OptionProps{Value: pf.Name, Selected: v.Filter.Platform == pf.Name}) {
+						{ pf.DisplayName }
+					}
+				}
+			}
+		}
 		@nativeselect.NativeSelect(nativeselect.Props{Name: "state", Attributes: templ.Attributes{"aria-label": "Replay filter"}}) {
 			@nativeselect.Option(nativeselect.OptionProps{Value: "", Selected: v.Filter.State == ""}) {
 				All scores
@@ -122,6 +184,8 @@ templ scoreFilters(v PlayerView) {
 				Ranked only
 			}
 		}
+		@input.Input(input.Props{Name: "min_score", Type: "number", Value: boundValue(v.Filter.MinScore), Placeholder: "Min score", Class: "w-32", Attributes: templ.Attributes{"min": "0", "aria-label": "Minimum score"}})
+		@input.Input(input.Props{Name: "max_score", Type: "number", Value: boundValue(v.Filter.MaxScore), Placeholder: "Max score", Class: "w-32", Attributes: templ.Attributes{"min": "0", "aria-label": "Maximum score"}})
 		<noscript>
 			@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline}) {
 				Apply
@@ -132,7 +196,7 @@ templ scoreFilters(v PlayerView) {
 
 templ ScoreTable(v PlayerView) {
 	<div id="scores">
-		if len(v.Scores.Items) == 0 {
+		if len(v.Groups.Groups) == 0 {
 			@empty.Empty(empty.Props{Class: "border border-dashed"}) {
 				@empty.Header() {
 					@empty.Title() {
@@ -154,26 +218,17 @@ templ ScoreTable(v PlayerView) {
 							@table.Head(table.HeadProps{Class: "hidden md:table-cell"}) {
 								Difficulty
 							}
-							@table.Head(table.HeadProps{Class: "text-right"}) {
-								Rank
-							}
-							@table.Head(table.HeadProps{Class: "text-right"}) {
-								Accuracy
-							}
-							@table.Head(table.HeadProps{Class: "hidden text-right sm:table-cell"}) {
-								PP
+							@table.Head() {
+								Best per platform
 							}
 							@table.Head(table.HeadProps{Class: "hidden lg:table-cell"}) {
-								Set
-							}
-							@table.Head() {
-								Replay
+								Last played
 							}
 						}
 					}
 					@table.Body() {
-						for _, s := range v.Scores.Items {
-							@scoreRow(s, v.Now)
+						for i, g := range v.Groups.Groups {
+							@groupRow(v, i, g)
 						}
 					}
 				}
@@ -183,37 +238,77 @@ templ ScoreTable(v PlayerView) {
 	</div>
 }
 
-templ scoreRow(s *model.Score, now time.Time) {
+templ groupRow(v PlayerView, i int, g service.MapGroup) {
 	@table.Row() {
 		@table.Cell() {
-			<a href={ templ.SafeURL(ScoreURL(ctx, s)) } class="flex items-center gap-3 underline-offset-4 hover:underline">
-				if cover := CoverURL(s); cover != "" {
+			<div class="flex items-center gap-3">
+				if cover := CoverURL(g.Latest); cover != "" {
 					<img src={ cover } alt="" loading="lazy" class="size-10 shrink-0 rounded-md border object-cover"/>
 				}
 				<span class="min-w-0">
-					<span class="block max-w-64 truncate font-medium">{ SongTitle(s) }</span>
-					<span class="block max-w-64 truncate text-xs text-muted-foreground">{ SongAuthor(s) } · { Mapper(s) }</span>
+					<span class="block max-w-64 truncate font-medium">{ SongTitle(g.Latest) }</span>
+					<span class="block max-w-64 truncate text-xs text-muted-foreground">{ SongAuthor(g.Latest) } · { Mapper(g.Latest) }</span>
 				</span>
-			</a>
+			</div>
+			<div id={ "plays-" + strconv.Itoa(i) } class="empty:hidden"></div>
 		}
 		@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
-			@DifficultyBadge(s)
-		}
-		@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
-			#{ strconv.Itoa(s.Rank) }
-		}
-		@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
-			{ Percent(s.Accuracy) }
-		}
-		@table.Cell(table.CellProps{Class: "hidden text-right tabular-nums sm:table-cell"}) {
-			{ PP(s.PP) }
-		}
-		@table.Cell(table.CellProps{Class: "hidden text-muted-foreground lg:table-cell"}) {
-			{ TimeAgo(s.SetAt, now) }
+			@DifficultyBadge(g.Latest)
 		}
 		@table.Cell() {
-			@ReplayBadge(s.ReplayState)
+			<div class="flex flex-wrap items-center gap-2">
+				for _, c := range g.Chips {
+					@PlayChip(c)
+				}
+				if len(g.Chips) == 0 {
+					@PlayChip(g.Latest)
+				}
+				if n := extraPlays(g); n > 0 {
+					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Attributes: templ.Attributes{
+						"hx-get": MapPlaysURL(v.Player.ID, v.Filter, g.MapKey), "hx-target": "#plays-" + strconv.Itoa(i), "hx-swap": "innerHTML",
+					}}) {
+						{ morePlaysLabel(n) }
+					}
+				}
+			</div>
 		}
+		@table.Cell(table.CellProps{Class: "hidden text-muted-foreground lg:table-cell"}) {
+			{ TimeAgo(g.Latest.SetAt, v.Now) }
+		}
+	}
+}
+
+// PlayChip is one play: platform, accuracy, raw score, rank and replay state.
+templ PlayChip(s *model.Score) {
+	<a href={ templ.SafeURL(ScoreURL(ctx, s)) } class="inline-flex items-center gap-2 rounded-md border px-2 py-1 text-xs underline-offset-4 hover:underline">
+		<span class="font-medium">{ PlatformName(ctx, s.Platform) }</span>
+		<span class="tabular-nums">{ Percent(s.Accuracy) }</span>
+		<span class="tabular-nums text-muted-foreground">{ Number(s.ModifiedScore) }</span>
+		<span class="tabular-nums text-muted-foreground">#{ strconv.Itoa(s.Rank) }</span>
+		@ReplayBadge(s.ReplayState)
+	</a>
+}
+
+type MapPlaysView struct {
+	Plays service.ScoreList
+	Now   time.Time
+}
+
+// MapPlays is the "more plays" fragment: every play of one map, newest first.
+templ MapPlays(v MapPlaysView) {
+	<ul class="mt-2 flex flex-col gap-1">
+		for _, s := range v.Plays.Items {
+			<li class="flex flex-wrap items-center gap-2 text-xs">
+				@PlayChip(s)
+				<span class="text-muted-foreground">{ TimeAgo(s.SetAt, v.Now) }</span>
+				if s.Kind == model.KindScore && !s.PersonalBest {
+					<span class="text-muted-foreground">superseded</span>
+				}
+			</li>
+		}
+	</ul>
+	if v.Plays.Total > int64(len(v.Plays.Items)) {
+		<p class="mt-1 text-xs text-muted-foreground">Showing the newest { Number(len(v.Plays.Items)) } of { Number(v.Plays.Total) } plays.</p>
 	}
 }
 
@@ -249,12 +344,12 @@ templ ReplayBadge(state string) {
 }
 
 templ pagination(v PlayerView) {
-	if v.Scores.Pages > 1 {
+	if v.Groups.Pages > 1 {
 		<nav class="mt-4 flex items-center justify-between text-sm" aria-label="Pagination">
-			<span class="text-muted-foreground">Page { strconv.Itoa(v.Scores.Page) } of { strconv.Itoa(v.Scores.Pages) } · { fmt.Sprintf("%s scores", Number(v.Scores.Total)) }</span>
+			<span class="text-muted-foreground">Page { strconv.Itoa(v.Groups.Page) } of { strconv.Itoa(v.Groups.Pages) } · { fmt.Sprintf("%s maps", Number(v.Groups.Total)) }</span>
 			<div class="flex gap-2">
-				@pageButton(v, v.Scores.Page-1, "Previous", v.Scores.Page <= 1)
-				@pageButton(v, v.Scores.Page+1, "Next", v.Scores.Page >= v.Scores.Pages)
+				@pageButton(v, v.Groups.Page-1, "Previous", v.Groups.Page <= 1)
+				@pageButton(v, v.Groups.Page+1, "Next", v.Groups.Page >= v.Groups.Pages)
 			</div>
 		</nav>
 	}

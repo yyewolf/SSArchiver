@@ -49,6 +49,16 @@ func TestURLs(t *testing.T) {
 	}
 }
 
+func TestMapPlaysURL(t *testing.T) {
+	f := service.ScoreFilter{Platform: "testplat", MinScore: new(int64(5)), MaxScore: new(int64(900000))}
+	if got := MapPlaysURL("p1", f, "hash501/Standard/9"); got != "/p/p1/map?key=hash501%2FStandard%2F9&max_score=900000&min_score=5&platform=testplat" {
+		t.Errorf("MapPlaysURL = %s", got)
+	}
+	if got := PlayerScoresURL("p1", f, 2); got != "/p/p1?max_score=900000&min_score=5&page=2&platform=testplat" {
+		t.Errorf("PlayerScoresURL = %s", got)
+	}
+}
+
 func TestViewerSrcHeadsetOverride(t *testing.T) {
 	ctx := testCtx(t)
 	st := service.DefaultSettings
