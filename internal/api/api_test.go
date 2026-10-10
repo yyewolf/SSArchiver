@@ -27,16 +27,26 @@ func (statusStub) Status() archiver.Status { return archiver.Status{State: archi
 func newAPI(t *testing.T, admin bool) (*service.Service, http.Handler) {
 	t.Helper()
 	svc, _, _ := testutil.NewService(t)
+	return svc, apiHandler(svc, admin)
+}
+
+// newMultiAPI also registers the fake third platform ("testplat").
+func newMultiAPI(t *testing.T, admin bool) (*service.Service, http.Handler) {
+	t.Helper()
+	svc, _, _ := testutil.NewMultiService(t)
+	return svc, apiHandler(svc, admin)
+}
+
+func apiHandler(svc *service.Service, admin bool) http.Handler {
 	mux := http.NewServeMux()
 	api.Register(mux, svc, statusStub{}, "test")
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := httpx.WithBaseURL(r.Context(), "https://replays.example.com")
 		if admin {
 			ctx = httpx.WithUser(ctx, &model.User{ID: 1, Username: "admin"})
 		}
 		mux.ServeHTTP(w, r.WithContext(ctx))
 	})
-	return svc, h
 }
 
 func call(t *testing.T, h http.Handler, method, path string, body any) (int, map[string]any, []any) {
@@ -133,6 +143,14 @@ func TestPublicReads(t *testing.T) {
 	if replay["download_url"] != "https://replays.example.com/r/1.dat" || replay["embed_url"] != "https://replays.example.com/embed/1" {
 		t.Fatalf("replay = %v", replay)
 	}
+	s1 := items[0].(map[string]any)
+	if s1["id"].(float64) != 1 || s1["platform"] != "scoresaber" || s1["kind"] != "score" || s1["end_type"] != "clear" ||
+		s1["external_id"] != "1" || s1["leaderboard"].(map[string]any)["external_id"] != "501" {
+		t.Fatalf("score fields = %v", s1)
+	}
+	if c := ids[0].(map[string]any)["counts"].(map[string]any); c["archived"].(float64) != 1 || c["scores"].(float64) != 2 {
+		t.Fatalf("account counts = %v", c)
+	}
 
 	code, sc, _ := call(t, h, http.MethodGet, "/api/v1/scores/2", nil)
 	r2 := sc["replay"].(map[string]any)
@@ -163,6 +181,10 @@ func TestAdminRequiresSession(t *testing.T) {
 		{http.MethodPatch, "/api/v1/players/1001"},
 		{http.MethodDelete, "/api/v1/players/1001"},
 		{http.MethodPost, "/api/v1/players/1001/poll"},
+		{http.MethodPost, "/api/v1/players/1001/identities"},
+		{http.MethodPatch, "/api/v1/players/1001/identities/scoresaber"},
+		{http.MethodDelete, "/api/v1/players/1001/identities/scoresaber"},
+		{http.MethodPost, "/api/v1/players/1001/merge"},
 		{http.MethodGet, "/api/v1/sync"},
 		{http.MethodPost, "/api/v1/sync/pause"},
 		{http.MethodPost, "/api/v1/sync/retry"},
@@ -226,7 +248,7 @@ func TestOpenAPIDocument(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	body := rec.Body.String()
-	for _, want := range []string{`"list-players"`, `"add-player"`, `"session"`, `"ssa_session"`} {
+	for _, want := range []string{`"list-players"`, `"add-player"`, `"session"`, `"ssa_session"`, `"link-identity"`, `"merge-player"`, `"get-play"`, `"min_score"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("openapi missing %s", want)
 		}

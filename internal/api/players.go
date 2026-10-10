@@ -24,7 +24,7 @@ type ListPlayersOutput struct{ Body []Player }
 
 type AddPlayerInput struct {
 	Body struct {
-		Ref      string `json:"ref" minLength:"1" maxLength:"200" doc:"ScoreSaber player ID or profile URL"`
+		Ref      string `json:"ref" minLength:"1" maxLength:"200" doc:"Profile URL (the platform is detected) or player ID"`
 		Platform string `json:"platform,omitempty" maxLength:"32" doc:"Platform of a bare ID (default: scoresaber). Profile URLs pick their platform."`
 	}
 }
@@ -69,7 +69,11 @@ func (a *API) registerPlayers() {
 		OperationID: "get-player", Method: http.MethodGet, Path: "/api/v1/players/{id}",
 		Summary: "Get a player", Tags: []string{"Players"},
 	}, func(ctx context.Context, in *PlayerPath) (*PlayerOutput, error) {
-		p, err := a.summary(ctx, in.ID)
+		id, err := a.playerID(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		p, err := a.summary(ctx, id)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -110,12 +114,16 @@ func (a *API) registerPlayers() {
 		OperationID: "update-player", Method: http.MethodPatch, Path: "/api/v1/players/{id}",
 		Summary: "Update a tracked player", Tags: []string{"Players"},
 	}), func(ctx context.Context, in *UpdatePlayerInput) (*PlayerOutput, error) {
+		id, err := a.playerID(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
 		if in.Body.Enabled != nil {
-			if err := a.svc.SetPlayerEnabled(ctx, in.ID, *in.Body.Enabled); err != nil {
+			if err := a.svc.SetPlayerEnabled(ctx, id, *in.Body.Enabled); err != nil {
 				return nil, mapErr(err)
 			}
 		}
-		dto, err := a.summary(ctx, in.ID)
+		dto, err := a.summary(ctx, id)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -126,7 +134,11 @@ func (a *API) registerPlayers() {
 		OperationID: "delete-player", Method: http.MethodDelete, Path: "/api/v1/players/{id}", DefaultStatus: http.StatusNoContent,
 		Summary: "Stop tracking a player and remove their scores", Tags: []string{"Players"},
 	}), func(ctx context.Context, in *DeletePlayerInput) (*struct{}, error) {
-		if err := a.svc.DeletePlayer(ctx, in.ID, in.DeleteFiles); err != nil {
+		id, err := a.playerID(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.svc.DeletePlayer(ctx, id, in.DeleteFiles); err != nil {
 			return nil, mapErr(err)
 		}
 		return nil, nil
@@ -136,7 +148,11 @@ func (a *API) registerPlayers() {
 		OperationID: "poll-player", Method: http.MethodPost, Path: "/api/v1/players/{id}/poll", DefaultStatus: http.StatusAccepted,
 		Summary: "Poll a player as soon as possible", Tags: []string{"Players"},
 	}), func(ctx context.Context, in *PlayerPath) (*struct{}, error) {
-		if err := a.svc.RequestPoll(ctx, in.ID); err != nil {
+		id, err := a.playerID(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.svc.RequestPoll(ctx, id); err != nil {
 			return nil, mapErr(err)
 		}
 		return nil, nil
