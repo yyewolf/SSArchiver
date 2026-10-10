@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
@@ -147,5 +148,53 @@ func TestUpsertSetsPlatformColumns(t *testing.T) {
 	lb := sc.Leaderboard
 	if lb.Platform != model.PlatformScoreSaber || lb.ExternalID != "1007" || lb.MapKey != "hash1007/Standard/9" {
 		t.Fatalf("leaderboard = %+v", lb)
+	}
+}
+
+func TestUpsertPlaysAllocatesInternalIDs(t *testing.T) {
+	fp := testutil.NewFakePlatform()
+	svc, _, _ := testutil.NewServiceWith(t, scoresaber.NewPlatform(&testutil.Resolver{Players: testutil.DefaultPlayers()}, nil), fp.Platform())
+	ctx := context.Background()
+	id := testutil.AddPlayer(t, svc, "https://tp.example/u/abc")
+	at := testutil.T0.Add(-time.Hour)
+	first := []platform.Play{
+		testutil.FakePlay(model.KindScore, "s2", "lb-x", at.Add(time.Minute), true),
+		testutil.FakePlay(model.KindScore, "s1", "lb-x", at, false),
+	}
+	res, err := svc.UpsertPlays(ctx, id, "testplat", first)
+	if err != nil || res.New != 2 || res.NewReplays != 1 {
+		t.Fatalf("first upsert = %+v %v", res, err)
+	}
+	list, err := svc.ListScores(ctx, service.ScoreFilter{PlayerID: id})
+	if err != nil || len(list.Items) != 2 {
+		t.Fatalf("list = %+v %v", list, err)
+	}
+	byExt := map[string]*model.Score{}
+	for _, s := range list.Items {
+		byExt[s.ExternalID] = s
+		if s.ID < platform.InternalIDBase || s.Platform != "testplat" || s.LeaderboardID < platform.InternalIDBase {
+			t.Fatalf("row = %+v", s)
+		}
+	}
+	if byExt["s2"].ID != byExt["s1"].ID+1 && byExt["s1"].ID != byExt["s2"].ID+1 {
+		t.Fatalf("IDs must be sequential: %d %d", byExt["s1"].ID, byExt["s2"].ID)
+	}
+	if lb := byExt["s1"].Leaderboard; lb.ExternalID != "lb-x" || lb.MapKey != "hash-lb-x/Standard/7" {
+		t.Fatalf("leaderboard = %+v", lb)
+	}
+	// Re-upserting is idempotent and keeps IDs; new plays continue the sequence.
+	again, err := svc.UpsertPlays(ctx, id, "testplat", append([]platform.Play{testutil.FakePlay(model.KindScore, "s3", "lb-y", at.Add(2*time.Minute), true)}, first...))
+	if err != nil || again.New != 1 || again.Known != 2 {
+		t.Fatalf("second upsert = %+v %v", again, err)
+	}
+	s3, err := svc.ListScores(ctx, service.ScoreFilter{PlayerID: id})
+	if err != nil || len(s3.Items) != 3 || s3.Items[0].ID != max(byExt["s1"].ID, byExt["s2"].ID)+1 {
+		t.Fatalf("after second upsert = %+v %v", s3.Items, err)
+	}
+	// The legacy platform keeps its own IDs.
+	legacy := testutil.AddPlayer(t, svc, "1001")
+	testutil.Upsert(t, svc, legacy, testutil.Item("1001", 77, 1077, at, true))
+	if sc, err := svc.GetScore(ctx, 77); err != nil || sc.Platform != model.PlatformScoreSaber {
+		t.Fatalf("legacy score = %+v %v", sc, err)
 	}
 }

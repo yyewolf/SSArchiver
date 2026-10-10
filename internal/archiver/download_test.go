@@ -18,6 +18,7 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/storage"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
@@ -47,7 +48,7 @@ func TestDownloadArchives(t *testing.T) {
 	if s.ReplayState != model.ReplayArchived || s.ReplaySize != int64(len("replay-1")) || s.ReplaySHA256 == "" {
 		t.Fatalf("score = %+v", s)
 	}
-	b, err := os.ReadFile(e.svc.Store().Path(a, 1))
+	b, err := os.ReadFile(e.svc.Store().Path(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"}))
 	if err != nil || string(b) != "replay-1" {
 		t.Fatalf("file = %q, %v", b, err)
 	}
@@ -101,7 +102,7 @@ func TestDownloadMidStreamFailure(t *testing.T) {
 	if s.ReplayState != model.ReplayPending || s.Attempts != 1 || !strings.Contains(s.LastError, "connection reset") {
 		t.Fatalf("score = %+v", s)
 	}
-	dir := filepath.Dir(e.svc.Store().Path(a, 1))
+	dir := filepath.Dir(e.svc.Store().Path(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"}))
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("leftover files after failed download: %v", entries)
@@ -127,7 +128,7 @@ func TestStorageErrorPausesWorker(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	a := ready(t, e, e.fc.history("1001", 1, 1, testutil.T0.Add(time.Minute)))
-	root := filepath.Dir(filepath.Dir(e.svc.Store().Path(a, 1)))
+	root := filepath.Dir(filepath.Dir(e.svc.Store().Path(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"})))
 	if err := os.Chmod(root, 0o500); err != nil {
 		t.Fatal(err)
 	}

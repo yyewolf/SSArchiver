@@ -9,6 +9,7 @@ import (
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/storage"
 )
 
 const replayBody = "ScoreSaber Replay bytes"
@@ -56,7 +57,7 @@ func TestReplayNotServed(t *testing.T) {
 			t.Errorf("%s = %d, want 404", p, rec.Code)
 		}
 	}
-	if err := os.Remove(e.svc.Store().Path(a, 1)); err != nil {
+	if err := os.Remove(e.svc.Store().Path(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"})); err != nil {
 		t.Fatal(err)
 	}
 	if rec := e.do(http.MethodGet, "/r/1.dat", nil); rec.Code != http.StatusNotFound {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/storage"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
@@ -82,7 +83,7 @@ func TestPlayerRowActions(t *testing.T) {
 	if strings.Contains(del.Body.String(), `id="player-`+a+`"`) {
 		t.Fatal("deleted row must be replaced with nothing")
 	}
-	if _, err := e.svc.Store().Open(a, 1); err == nil {
+	if _, err := e.svc.Store().Open(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"}); err == nil {
 		t.Fatal("replay files not deleted")
 	}
 	missing := e.do(http.MethodPost, "/admin/players/"+a+"/poll", url.Values{}, withCookie(c), htmx(""))

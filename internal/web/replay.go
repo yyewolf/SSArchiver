@@ -31,7 +31,7 @@ func (h *Handler) replayFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := h.svc.Store().Open(sc.PlayerID, sc.ID)
+	f, err := h.svc.OpenReplay(sc)
 	if err != nil {
 		slog.Error("archived replay file missing", "score", sc.ID, "err", err)
 		http.NotFound(w, r)

@@ -115,7 +115,11 @@ func (e *testEnv) seed() string {
 	if _, err := e.svc.UpsertPlays(ctx, p.ID, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		e.t.Fatal(err)
 	}
-	size, sum, err := e.svc.Store().Put(p.ID, 1, strings.NewReader("ScoreSaber Replay bytes"))
+	sc, err := e.svc.GetScore(ctx, 1)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	size, sum, err := e.svc.PutReplay(sc, strings.NewReader("ScoreSaber Replay bytes"))
 	if err != nil {
 		e.t.Fatal(err)
 	}

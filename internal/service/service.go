@@ -73,6 +73,7 @@ func (s *Service) nextID() string {
 	return s.newID()
 }
 
+// Store exposes the replay store (tests and callers that need a path directly).
 func (s *Service) Store() *storage.Store { return s.store }
 
 // Wake nudges the archiver worker; it never blocks.

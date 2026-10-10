@@ -51,7 +51,7 @@ func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 	}
 	body, err := p.Adapter.Replay(ctx, ref)
 	if err == nil {
-		size, sum, perr := w.svc.Store().Put(sc.PlayerID, sc.ID, body)
+		size, sum, perr := w.svc.PutReplay(sc, body)
 		_ = body.Close()
 		if perr == nil {
 			if err := w.svc.MarkReplayArchived(ctx, sc.ID, size, sum); err != nil {

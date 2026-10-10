@@ -77,7 +77,11 @@ func seed(t *testing.T, svc *service.Service) string {
 	if _, err := svc.UpsertPlays(ctx, p.ID, model.PlatformScoreSaber, scoresaber.Plays(items)); err != nil {
 		t.Fatal(err)
 	}
-	size, sum, _ := svc.Store().Put(p.ID, 1, strings.NewReader("replay"))
+	sc, err := svc.GetScore(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size, sum, _ := svc.PutReplay(sc, strings.NewReader("replay"))
 	if err := svc.MarkReplayArchived(ctx, 1, size, sum); err != nil {
 		t.Fatal(err)
 	}

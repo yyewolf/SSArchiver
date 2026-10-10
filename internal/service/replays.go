@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"gorm.io/gorm"
 
 	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/storage"
 )
 
 type ReplayTier int
@@ -162,4 +165,44 @@ func (s *Service) NextRetryAt(ctx context.Context) (time.Time, bool, error) {
 		return time.Time{}, false, fmt.Errorf("service: next retry: %w", err)
 	}
 	return *sc.NextAttemptAt, true, nil
+}
+
+// replayLoc places a row's replay file (spec §5.5).
+func (s *Service) replayLoc(sc *model.Score) (storage.Loc, error) {
+	p, ok := s.reg.Get(sc.Platform)
+	if !ok {
+		return storage.Loc{}, fmt.Errorf("service: unknown platform %q", sc.Platform)
+	}
+	l := storage.Loc{PlayerID: sc.PlayerID, RowID: sc.ID, Ext: p.ReplayExt}
+	if !p.Legacy {
+		l.Dir = p.Name
+	}
+	return l, nil
+}
+
+// ReplayPath is where a row's replay file lives (or would live).
+func (s *Service) ReplayPath(sc *model.Score) (string, error) {
+	l, err := s.replayLoc(sc)
+	if err != nil {
+		return "", err
+	}
+	return s.store.Path(l), nil
+}
+
+// PutReplay stores a row's replay file.
+func (s *Service) PutReplay(sc *model.Score, r io.Reader) (int64, string, error) {
+	l, err := s.replayLoc(sc)
+	if err != nil {
+		return 0, "", err
+	}
+	return s.store.Put(l, r)
+}
+
+// OpenReplay opens a row's archived replay file.
+func (s *Service) OpenReplay(sc *model.Score) (*os.File, error) {
+	l, err := s.replayLoc(sc)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.Open(l)
 }

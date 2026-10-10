@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -95,24 +94,55 @@ func (s *Service) UpsertPlays(ctx context.Context, playerID, platformName string
 	return res, nil
 }
 
-// idAllocator hands out row IDs. Legacy platforms use their own numeric IDs
-// (Task 7 adds the internal range for the others).
+// idAllocator hands out row IDs: legacy platforms use their own numeric IDs;
+// the others get sequential internal IDs from platform.InternalIDBase
+// (spec §4.5), looked up once per transaction.
 type idAllocator struct {
-	ctx    context.Context
-	tx     *query.Query
-	legacy bool
+	ctx            context.Context
+	tx             *query.Query
+	legacy         bool
+	nextLB, nextSc int64
 }
 
-func (a *idAllocator) leaderboard(externalID string) (int64, error) { return a.legacyID(externalID) }
+func (a *idAllocator) leaderboard(externalID string) (int64, error) {
+	if a.legacy {
+		return a.legacyID(externalID)
+	}
+	lb := a.tx.Leaderboard
+	return a.next(&a.nextLB, func(out *[]int64) error {
+		return lb.WithContext(a.ctx).Where(lb.ID.Gte(platform.InternalIDBase)).Order(lb.ID.Desc()).Limit(1).Pluck(lb.ID, out)
+	})
+}
 
-func (a *idAllocator) score(externalID string) (int64, error) { return a.legacyID(externalID) }
+func (a *idAllocator) score(externalID string) (int64, error) {
+	if a.legacy {
+		return a.legacyID(externalID)
+	}
+	q := a.tx.Score
+	return a.next(&a.nextSc, func(out *[]int64) error {
+		return q.WithContext(a.ctx).Where(q.ID.Gte(platform.InternalIDBase)).Order(q.ID.Desc()).Limit(1).Pluck(q.ID, out)
+	})
+}
+
+func (a *idAllocator) next(cur *int64, maxID func(*[]int64) error) (int64, error) {
+	if *cur == 0 {
+		var ids []int64
+		if err := maxID(&ids); err != nil {
+			return 0, fmt.Errorf("service: allocate id: %w", err)
+		}
+		*cur = platform.InternalIDBase
+		if len(ids) == 1 {
+			*cur = ids[0] + 1
+		}
+	}
+	id := *cur
+	*cur++
+	return id, nil
+}
 
 func (a *idAllocator) legacyID(externalID string) (int64, error) {
-	if !a.legacy {
-		return 0, errors.New("service: non-legacy platforms are not supported yet")
-	}
 	id, err := strconv.ParseInt(externalID, 10, 64)
-	if err != nil || id <= 0 {
+	if err != nil || id <= 0 || id >= platform.InternalIDBase {
 		return 0, fmt.Errorf("service: invalid legacy id %q", externalID)
 	}
 	return id, nil

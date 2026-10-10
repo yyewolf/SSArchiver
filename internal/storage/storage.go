@@ -1,4 +1,6 @@
-// Package storage stores replay files on disk under {root}/{player}/.
+// Package storage stores replay files on disk: {root}/{player}/{row}{ext} for
+// the legacy platform, {root}/{player}/{platform}/{row}{ext} for the others
+// (spec §5.5).
 package storage
 
 import (
@@ -10,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -28,10 +31,37 @@ func ValidPlayerID(id string) bool { return platform.ValidPlayerID(id) }
 
 type Store struct{ root string }
 
-type Entry struct {
+var (
+	dirRe = regexp.MustCompile(`^[a-z][a-z0-9]{1,31}$`)
+	extRe = regexp.MustCompile(`^\.[a-z0-9]{1,8}$`)
+)
+
+// Loc locates one replay file.
+type Loc struct {
 	PlayerID string
-	ScoreID  int64
-	Path     string
+	Dir      string // platform directory; "" = legacy layout
+	RowID    int64
+	Ext      string // ".dat", ".bsor", …
+}
+
+func (l Loc) valid() bool {
+	return ValidPlayerID(l.PlayerID) && (l.Dir == "" || dirRe.MatchString(l.Dir)) && extRe.MatchString(l.Ext)
+}
+
+func (s *Store) dir(l Loc) string {
+	if l.Dir == "" {
+		return filepath.Join(s.root, l.PlayerID)
+	}
+	return filepath.Join(s.root, l.PlayerID, l.Dir)
+}
+
+func (s *Store) Path(l Loc) string {
+	return filepath.Join(s.dir(l), strconv.FormatInt(l.RowID, 10)+l.Ext)
+}
+
+type Entry struct {
+	Loc
+	Path string
 }
 
 func New(root string) (*Store, error) {
@@ -39,10 +69,6 @@ func New(root string) (*Store, error) {
 		return nil, fmt.Errorf("%w: create %s: %w", ErrWrite, root, err)
 	}
 	return &Store{root: root}, nil
-}
-
-func (s *Store) Path(playerID string, scoreID int64) string {
-	return filepath.Join(s.root, playerID, strconv.FormatInt(scoreID, 10)+".dat")
 }
 
 type trackingReader struct {
@@ -59,15 +85,15 @@ func (t *trackingReader) Read(p []byte) (int, error) {
 }
 
 // Put streams r to a temp file, fsyncs, then renames it into place.
-func (s *Store) Put(playerID string, scoreID int64, r io.Reader) (int64, string, error) {
-	if !ValidPlayerID(playerID) {
-		return 0, "", fmt.Errorf("%w: %q", ErrInvalidID, playerID)
+func (s *Store) Put(l Loc, r io.Reader) (int64, string, error) {
+	if !l.valid() {
+		return 0, "", fmt.Errorf("%w: %+v", ErrInvalidID, l)
 	}
-	dir := filepath.Join(s.root, playerID)
+	dir := s.dir(l)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return 0, "", fmt.Errorf("%w: mkdir %s: %w", ErrWrite, dir, err)
 	}
-	final := s.Path(playerID, scoreID)
+	final := s.Path(l)
 	tmp := final + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
@@ -108,18 +134,18 @@ func (s *Store) Put(playerID string, scoreID int64, r io.Reader) (int64, string,
 	return n, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func (s *Store) Open(playerID string, scoreID int64) (*os.File, error) {
-	if !ValidPlayerID(playerID) {
-		return nil, fmt.Errorf("%w: %q", ErrInvalidID, playerID)
+func (s *Store) Open(l Loc) (*os.File, error) {
+	if !l.valid() {
+		return nil, fmt.Errorf("%w: %+v", ErrInvalidID, l)
 	}
-	return os.Open(s.Path(playerID, scoreID))
+	return os.Open(s.Path(l))
 }
 
-func (s *Store) Remove(playerID string, scoreID int64) error {
-	if !ValidPlayerID(playerID) {
-		return fmt.Errorf("%w: %q", ErrInvalidID, playerID)
+func (s *Store) Remove(l Loc) error {
+	if !l.valid() {
+		return fmt.Errorf("%w: %+v", ErrInvalidID, l)
 	}
-	if err := os.Remove(s.Path(playerID, scoreID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(s.Path(l)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("storage: remove: %w", err)
 	}
 	return nil
@@ -135,7 +161,9 @@ func (s *Store) RemovePlayer(playerID string) error {
 	return nil
 }
 
-// Scan deletes leftover *.tmp files and lists every {player}/{score}.dat.
+// Scan deletes leftover *.tmp files and lists every replay file, both the
+// legacy {player}/{row}{ext} and the per-platform {player}/{dir}/{row}{ext}
+// layout; anything else is skipped.
 func (s *Store) Scan() ([]Entry, int, error) {
 	var entries []Entry
 	removed := 0
@@ -158,16 +186,29 @@ func (s *Store) Scan() ([]Entry, int, error) {
 			}
 			return nil
 		}
-		idStr, ok := strings.CutSuffix(name, ".dat")
-		if !ok {
+		rel, rerr := filepath.Rel(s.root, path)
+		if rerr != nil {
 			return nil
 		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		player := filepath.Base(filepath.Dir(path))
-		if err != nil || !ValidPlayerID(player) {
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		var l Loc
+		switch len(parts) {
+		case 2:
+			l.PlayerID = parts[0]
+		case 3:
+			l.PlayerID, l.Dir = parts[0], parts[1]
+		default:
 			return nil
 		}
-		entries = append(entries, Entry{PlayerID: player, ScoreID: id, Path: path})
+		l.Ext = filepath.Ext(name)
+		id, err := strconv.ParseInt(strings.TrimSuffix(name, l.Ext), 10, 64)
+		if err != nil {
+			return nil
+		}
+		l.RowID = id
+		if l.valid() {
+			entries = append(entries, Entry{Loc: l, Path: path})
+		}
 		return nil
 	})
 	if err != nil {

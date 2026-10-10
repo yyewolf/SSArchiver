@@ -9,6 +9,7 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/service"
+	"github.com/yyewolf/ssarchiver/internal/storage"
 	"github.com/yyewolf/ssarchiver/internal/testutil"
 )
 
@@ -71,7 +72,7 @@ func TestDeletePlayer(t *testing.T) {
 	ctx := context.Background()
 	a := mustAdd(t, svc, "1001")
 	upsert(t, svc, a, clk, []scoreItem{{1, true}})
-	if _, _, err := svc.Store().Put(a, 1, strings.NewReader("x")); err != nil {
+	if _, _, err := svc.Store().Put(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"}, strings.NewReader("x")); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.DeletePlayer(ctx, a, true); err != nil {
@@ -83,7 +84,7 @@ func TestDeletePlayer(t *testing.T) {
 	if _, err := svc.GetScore(ctx, 1); !errors.Is(err, service.ErrNotFound) {
 		t.Fatalf("score still exists: %v", err)
 	}
-	if _, err := svc.Store().Open(a, 1); err == nil {
+	if _, err := svc.Store().Open(storage.Loc{PlayerID: a, RowID: 1, Ext: ".dat"}); err == nil {
 		t.Fatal("replay file still exists")
 	}
 	if err := svc.DeletePlayer(ctx, a, false); !errors.Is(err, service.ErrNotFound) {

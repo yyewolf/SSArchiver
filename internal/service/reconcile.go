@@ -24,30 +24,30 @@ func (s *Service) ReconcileStorage(ctx context.Context) (ReconcileResult, error)
 		return res, err
 	}
 	res.RemovedTmp = removed
-	onDisk := make(map[int64]storage.Entry, len(entries))
+	onDisk := make(map[string]storage.Entry, len(entries))
 	ids := make([]int64, 0, len(entries))
 	for _, e := range entries {
-		onDisk[e.ScoreID] = e
-		ids = append(ids, e.ScoreID)
+		onDisk[e.Path] = e
+		ids = append(ids, e.RowID)
 	}
 	q := s.q.Score
+	matched := map[string]bool{}
 	for start := 0; start < len(ids); start += 500 {
 		chunk := ids[start:min(start+500, len(ids))]
 		rows, err := q.WithContext(ctx).Where(q.ID.In(chunk...)).Find()
 		if err != nil {
 			return res, fmt.Errorf("service: reconcile load: %w", err)
 		}
-		byID := make(map[int64]*model.Score, len(rows))
-		for _, r := range rows {
-			byID[r.ID] = r
-		}
-		for _, id := range chunk {
-			e := onDisk[id]
-			sc, ok := byID[id]
-			if !ok || sc.PlayerID != e.PlayerID {
-				res.Orphans++
+		for _, sc := range rows {
+			path, err := s.ReplayPath(sc)
+			if err != nil {
+				continue // row of a platform that is no longer registered
+			}
+			e, ok := onDisk[path]
+			if !ok {
 				continue
 			}
+			matched[path] = true
 			if sc.ReplayState == model.ReplayArchived {
 				continue
 			}
@@ -56,21 +56,26 @@ func (s *Service) ReconcileStorage(ctx context.Context) (ReconcileResult, error)
 				slog.Warn("reconcile: hash failed", "path", e.Path, "err", err)
 				continue
 			}
-			if err := s.MarkReplayArchived(ctx, id, size, sum); err != nil {
+			if err := s.MarkReplayArchived(ctx, sc.ID, size, sum); err != nil {
 				return res, err
 			}
 			res.Adopted++
 		}
 	}
-	var archived []int64
-	if err := q.WithContext(ctx).Where(q.ReplayState.Eq(model.ReplayArchived)).Pluck(q.ID, &archived); err != nil {
+	res.Orphans = len(onDisk) - len(matched)
+	archived, err := q.WithContext(ctx).Where(q.ReplayState.Eq(model.ReplayArchived)).Find()
+	if err != nil {
 		return res, fmt.Errorf("service: reconcile archived: %w", err)
 	}
-	for _, id := range archived {
-		if _, ok := onDisk[id]; ok {
+	for _, sc := range archived {
+		path, err := s.ReplayPath(sc)
+		if err != nil {
 			continue
 		}
-		if err := s.updateScore(ctx, id, map[string]any{
+		if _, ok := onDisk[path]; ok {
+			continue
+		}
+		if err := s.updateScore(ctx, sc.ID, map[string]any{
 			"replay_state": model.ReplayPending, "replay_size": 0, "replay_sha256": "", "archived_at": nil,
 			"attempts": 0, "next_attempt_at": nil, "last_error": "file missing on disk; re-downloading",
 		}); err != nil {
