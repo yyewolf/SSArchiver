@@ -18,6 +18,21 @@ func TestPlayerPage(t *testing.T) {
 		`property="og:title"`, `href="/s/1"`, `id="score-filters"`, "Archiving replays")
 }
 
+func TestPlayerPageProfileLinkUsesAccountID(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.seed()
+	rec := e.do(http.MethodGet, "/p/"+a, nil)
+	if rec.Code != 200 {
+		t.Fatalf("code = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	contains(t, body, `href="https://scoresaber.com/u/1001"`, "ScoreSaber profile")
+	if strings.Contains(body, "/u/"+a) {
+		t.Fatalf("profile link leaks the opaque player ID %q:\n%s", a, body)
+	}
+}
+
 func TestPlayerPageHTMXPartialAndFilters(t *testing.T) {
 	e := newEnv(t)
 	e.setup()

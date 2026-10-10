@@ -19,12 +19,14 @@ import (
 )
 
 type PlayerView struct {
-	Player *model.Player
-	Sync   model.SyncFeed
-	Counts service.Counts
-	Scores service.ScoreList
-	Filter service.ScoreFilter
-	Now    time.Time
+	Player     *model.Player
+	Sync       model.SyncFeed
+	Counts     service.Counts
+	Scores     service.ScoreList
+	Filter     service.ScoreFilter
+	Now        time.Time
+	ProfileURL string // primary identity's external profile URL ("" when none)
+	Platform   string // primary identity's platform display name
 }
 
 templ PlayerPage(p Page, v PlayerView) {
@@ -39,8 +41,11 @@ templ PlayerPage(p Page, v PlayerView) {
 			<div class="min-w-0 flex-1">
 				<h1 class="truncate text-2xl font-semibold tracking-tight">{ v.Player.Name }</h1>
 				<p class="text-sm text-muted-foreground">
-					{ v.Player.Country } ·
-					<a class="underline-offset-4 hover:underline" href={ templ.SafeURL("https://scoresaber.com/u/" + v.Player.ID) } target="_blank" rel="noopener">ScoreSaber profile</a>
+					{ v.Player.Country }
+					if v.ProfileURL != "" {
+						·
+						<a class="underline-offset-4 hover:underline" href={ templ.SafeURL(v.ProfileURL) } target="_blank" rel="noopener">{ v.Platform } profile</a>
+					}
 				</p>
 			</div>
 			<dl class="flex gap-8 text-sm">

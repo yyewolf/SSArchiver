@@ -17,7 +17,9 @@ var (
 	slugRe = regexp.MustCompile(`^[a-z]{2,8}$`)
 )
 
-// Registry is the set of platforms this instance archives from.
+// Registry is the set of platforms this instance archives from. Platform
+// values returned by Get/BySlug/All alias the registry's slices (Feeds,
+// ImageHosts) and must be treated as read-only after startup.
 type Registry struct {
 	list   []Platform // by Priority, then Name
 	byName map[string]Platform

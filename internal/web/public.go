@@ -55,14 +55,22 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	v := views.PlayerView{Player: pl, Sync: sum.Sync(), Counts: sum.Counts, Scores: list, Filter: f, Now: h.svc.Now()}
+	displayName := "ScoreSaber"
+	profileURL := ""
+	if len(sum.Identities) > 0 {
+		if p, ok := h.svc.Platforms().Get(sum.Identities[0].Platform); ok {
+			displayName = p.DisplayName
+			profileURL = p.ProfileURL(sum.Identities[0].ExternalID)
+		}
+	}
+	v := views.PlayerView{Player: pl, Sync: sum.Sync(), Counts: sum.Counts, Scores: list, Filter: f, Now: h.svc.Now(), ProfileURL: profileURL, Platform: displayName}
 	if isHTMX(r) && r.Header.Get("HX-Target") == "scores" {
 		render(w, r, http.StatusOK, views.ScoreTable(v))
 		return
 	}
 	p := h.page(r, pl.Name)
 	p.OG = &views.OpenGraph{
-		Title:       pl.Name + " · ScoreSaber replays",
+		Title:       pl.Name + " · " + displayName + " replays",
 		Description: fmt.Sprintf("%s archived replays", views.Number(sum.Counts.Archived)),
 		Image:       pl.AvatarURL,
 		URL:         httpx.BaseURLFrom(ctx) + "/p/" + pl.ID,
