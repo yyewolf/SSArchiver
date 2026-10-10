@@ -34,6 +34,32 @@ const (
 	KindWorker    = "worker"
 )
 
+// PlatformScoreSaber is the legacy platform's registry name (spec §4.1). It is
+// the only platform name code outside its own package needs (the migration).
+const PlatformScoreSaber = "scoresaber"
+
+// Row kinds and end types (spec §4.4). A feed's key in sync_feeds is the row
+// kind it produces.
+const (
+	KindScore   = "score"   // a leaderboard submission
+	KindAttempt = "attempt" // any other recorded run
+
+	EndClear    = "clear"
+	EndFail     = "fail"
+	EndRestart  = "restart"
+	EndQuit     = "quit"
+	EndPractice = "practice"
+	EndUnknown  = "unknown"
+)
+
+// Feed access states (spec §4.3).
+const (
+	AccessNA      = "n/a"     // the feed needs no access probe
+	AccessUnknown = "unknown" // not probed yet
+	AccessPublic  = "public"
+	AccessPrivate = "private"
+)
+
 type Player struct {
 	ID                 string    `gorm:"primaryKey"`
 	Name               string    `gorm:"not null"`
