@@ -149,6 +149,20 @@ func (s *Service) updateFeed(ctx context.Context, k FeedKey, upd map[string]any)
 	return nil
 }
 
+// SetFeedDownload pauses or resumes one feed's replay downloads. Polling and
+// backfill keep running: the rows are still recorded, only the downloads wait.
+func (s *Service) SetFeedDownload(ctx context.Context, k FeedKey, download bool) (*model.SyncFeed, error) {
+	if err := s.updateFeed(ctx, k, map[string]any{"download_enabled": download}); err != nil {
+		return nil, err
+	}
+	f, err := s.getFeed(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+	s.Publish(Update{PlayerID: k.PlayerID, Kind: model.KindWorker})
+	return f, nil
+}
+
 // MarkFeedPolled records a successful poll and clears the feed's error.
 func (s *Service) MarkFeedPolled(ctx context.Context, k FeedKey) error {
 	return s.updateFeed(ctx, k, map[string]any{"last_polled_at": s.Now(), "last_error": ""})

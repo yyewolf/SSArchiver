@@ -31,6 +31,7 @@ func newSyncFeed(db *gorm.DB, opts ...gen.DOOption) syncFeed {
 	_syncFeed.Platform = field.NewString(tableName, "platform")
 	_syncFeed.Feed = field.NewString(tableName, "feed")
 	_syncFeed.Enabled = field.NewBool(tableName, "enabled")
+	_syncFeed.DownloadEnabled = field.NewBool(tableName, "download_enabled")
 	_syncFeed.StartedAt = field.NewTime(tableName, "started_at")
 	_syncFeed.Access = field.NewString(tableName, "access")
 	_syncFeed.AccessCheckedAt = field.NewTime(tableName, "access_checked_at")
@@ -55,6 +56,7 @@ type syncFeed struct {
 	Platform           field.String
 	Feed               field.String
 	Enabled            field.Bool
+	DownloadEnabled    field.Bool
 	StartedAt          field.Time
 	Access             field.String
 	AccessCheckedAt    field.Time
@@ -85,6 +87,7 @@ func (s *syncFeed) updateTableName(table string) *syncFeed {
 	s.Platform = field.NewString(table, "platform")
 	s.Feed = field.NewString(table, "feed")
 	s.Enabled = field.NewBool(table, "enabled")
+	s.DownloadEnabled = field.NewBool(table, "download_enabled")
 	s.StartedAt = field.NewTime(table, "started_at")
 	s.Access = field.NewString(table, "access")
 	s.AccessCheckedAt = field.NewTime(table, "access_checked_at")
@@ -119,11 +122,12 @@ func (s *syncFeed) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (s *syncFeed) fillFieldMap() {
-	s.fieldMap = make(map[string]field.Expr, 14)
+	s.fieldMap = make(map[string]field.Expr, 15)
 	s.fieldMap["player_id"] = s.PlayerID
 	s.fieldMap["platform"] = s.Platform
 	s.fieldMap["feed"] = s.Feed
 	s.fieldMap["enabled"] = s.Enabled
+	s.fieldMap["download_enabled"] = s.DownloadEnabled
 	s.fieldMap["started_at"] = s.StartedAt
 	s.fieldMap["access"] = s.Access
 	s.fieldMap["access_checked_at"] = s.AccessCheckedAt

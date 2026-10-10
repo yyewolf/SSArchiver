@@ -105,6 +105,29 @@ func (h *Handler) setFeedEnabled(w http.ResponseWriter, r *http.Request) {
 	h.renderRow(w, r, k.PlayerID, t, title)
 }
 
+// setFeedDownload pauses or resumes one feed's replay downloads; polling and
+// backfill keep running.
+func (h *Handler) setFeedDownload(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	k := feedKey(r)
+	download := r.PostFormValue("enabled") == "true"
+	if _, err := h.svc.SetFeedDownload(r.Context(), k, download); err != nil {
+		if isNotFound(err) {
+			h.toastOnly(w, r, toast.TypeError, "Feed not found", "")
+			return
+		}
+		h.serverError(w, r, err)
+		return
+	}
+	title := "Resumed replay downloads"
+	if !download {
+		title = "Paused replay downloads"
+	}
+	h.renderRow(w, r, k.PlayerID, toast.TypeSuccess, title)
+}
+
 func (h *Handler) checkFeedAccess(w http.ResponseWriter, r *http.Request) {
 	k := feedKey(r)
 	f, err := h.svc.CheckFeedAccess(r.Context(), k)

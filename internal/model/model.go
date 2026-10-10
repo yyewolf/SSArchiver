@@ -88,8 +88,9 @@ type SyncFeed struct {
 	Platform           string    `gorm:"primaryKey"`
 	Feed               string    `gorm:"primaryKey"` // the row kind it produces: KindScore | KindAttempt
 	Enabled            bool      `gorm:"not null"`
-	StartedAt          time.Time `gorm:"not null"` // plays set at or after it are "new"
-	Access             string    `gorm:"not null"` // Access*
+	DownloadEnabled    bool      `gorm:"not null;default:true"` // false pauses this feed's replay downloads
+	StartedAt          time.Time `gorm:"not null"`              // plays set at or after it are "new"
+	Access             string    `gorm:"not null"`              // Access*
 	AccessCheckedAt    *time.Time
 	RemoteTotal        int64  `gorm:"not null"`
 	BackfillState      string `gorm:"not null"`

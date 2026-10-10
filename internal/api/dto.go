@@ -41,6 +41,7 @@ type Feed struct {
 	Kind            string       `json:"kind" enum:"score,attempt"`
 	Optional        bool         `json:"optional" doc:"Switched on and off by the admin (PATCH …/feeds/{kind})"`
 	Enabled         bool         `json:"enabled"`
+	DownloadEnabled bool         `json:"download_enabled" doc:"False pauses this feed's replay downloads (polling continues)"`
 	Access          string       `json:"access" enum:"n/a,unknown,public,private"`
 	AccessCheckedAt *time.Time   `json:"access_checked_at,omitempty"`
 	Hint            *Hint        `json:"hint,omitempty" doc:"What the player must change; only while access is private"`
@@ -63,7 +64,8 @@ func hintDTO(h *platform.Hint) *Hint {
 func feedDTO(p platform.Platform, f model.SyncFeed, c service.Counts) Feed {
 	spec, _ := p.Feed(f.Feed)
 	out := Feed{
-		Kind: f.Feed, Optional: spec.Optional, Enabled: f.Enabled, Access: f.Access, AccessCheckedAt: f.AccessCheckedAt,
+		Kind: f.Feed, Optional: spec.Optional, Enabled: f.Enabled, DownloadEnabled: f.DownloadEnabled,
+		Access: f.Access, AccessCheckedAt: f.AccessCheckedAt,
 		RemoteTotal: f.RemoteTotal, StartedAt: f.StartedAt, LastPolledAt: f.LastPolledAt, LastError: f.LastError,
 		Backfill: Backfill{State: f.BackfillState, NextPage: f.BackfillPage, TotalPages: f.BackfillTotalPages},
 		Counts:   replayCounts(c),

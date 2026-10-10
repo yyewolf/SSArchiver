@@ -372,9 +372,13 @@ templ identityMenu(pl service.PlayerSummary, id service.Identity) {
 				</form>
 				if fs.On() {
 					<p class="text-muted-foreground">{ feedStatus(fs) }</p>
+					@feedDownloadToggle(pl, id, fs)
 				}
 			}
-			if len(pl.Identities) > 1 {
+			{{ s := id.Feed(model.KindScore) }}
+			if s.PlayerID != "" {
+				@feedDownloadToggle(pl, id, FeedState{Feed: s})
+			}			if len(pl.Identities) > 1 {
 				<form
 					hx-post={ identityURL(pl.ID, id.Platform) + "/delete" }
 					hx-target={ "#player-" + pl.ID }
@@ -394,6 +398,27 @@ templ identityMenu(pl service.PlayerSummary, id service.Identity) {
 			}
 		</div>
 	</details>
+}
+
+// feedDownloadToggle pauses or resumes one feed's replay downloads; the feed
+// keeps being polled and listed either way.
+templ feedDownloadToggle(pl service.PlayerSummary, id service.Identity, fs FeedState) {
+	if fs.Feed.PlayerID != "" {
+		{{ noun := "replay" }}
+		if fs.Feed.Feed != model.KindScore {
+			{{ noun = FeedName(fs.Feed.Feed) }}
+		}
+		<form hx-post={ FeedURL(pl.ID, id.Platform, fs.Feed.Feed) + "/download" } hx-target={ "#player-" + pl.ID } hx-swap="outerHTML">
+			<input type="hidden" name="enabled" value={ strconv.FormatBool(!fs.Feed.DownloadEnabled) }/>
+			@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm, Class: "w-full"}) {
+				if fs.Feed.DownloadEnabled {
+					{ "Pause " + noun + " downloads" }
+				} else {
+					{ "Resume " + noun + " downloads" }
+				}
+			}
+		</form>
+	}
 }
 
 templ linkMenu(pl service.PlayerSummary, plats []platform.Platform) {

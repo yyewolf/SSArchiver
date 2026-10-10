@@ -40,7 +40,7 @@ func (s *Service) replayCandidates(ctx context.Context, tier ReplayTier, busy Bu
 		Join(p, p.ID.EqCol(q.PlayerID)).
 		Join(pp, pp.PlayerID.EqCol(q.PlayerID), pp.Platform.EqCol(q.Platform)).
 		Join(f, f.PlayerID.EqCol(q.PlayerID), f.Platform.EqCol(q.Platform), f.Feed.EqCol(q.Kind)).
-		Where(q.ReplayState.Eq(model.ReplayPending), p.Enabled.Is(true), pp.Enabled.Is(true), f.Enabled.Is(true),
+		Where(q.ReplayState.Eq(model.ReplayPending), p.Enabled.Is(true), pp.Enabled.Is(true), f.Enabled.Is(true), f.DownloadEnabled.Is(true),
 			f.Access.In(model.AccessNA, model.AccessPublic)).
 		Where(q.WithContext(ctx).Where(q.NextAttemptAt.IsNull()).Or(q.NextAttemptAt.Lte(now)))
 	for pk := range busy {

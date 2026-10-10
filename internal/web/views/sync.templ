@@ -343,14 +343,14 @@ templ queueCard(v SyncView) {
 										<span class="ml-1 text-xs text-muted-foreground">(disabled)</span>
 									}
 								}
-								@table.Cell() {
-									{ feedLabel(ctx, q) }
-									if q.Player.Enabled && !q.Identity.Enabled {
-										<span class="ml-1 text-xs text-muted-foreground">(paused)</span>
-									}
-									if !q.Feed.Enabled {
-										<span class="ml-1 text-xs text-muted-foreground">(off)</span>
-									} else if q.Feed.Access == model.AccessUnknown {
+							@table.Cell() {
+								{ feedLabel(ctx, q) }
+								if q.Player.Enabled && !q.Identity.Enabled {
+									<span class="ml-1 text-xs text-muted-foreground">(paused)</span>
+								}
+								if !q.Feed.Enabled {
+									<span class="ml-1 text-xs text-muted-foreground">(off)</span>
+								} else if q.Feed.Access == model.AccessUnknown {
 										@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "ml-1"}) {
 											Checking access
 										}
@@ -366,10 +366,13 @@ templ queueCard(v SyncView) {
 													<a class="underline underline-offset-4" href={ templ.SafeURL(spec.AccessHint.LinkURL) } target="_blank" rel="noopener">{ spec.AccessHint.LinkText }</a> ·
 												}
 											}
-											<button type="button" class="underline underline-offset-4" hx-post={ FeedURL(q.Player.ID, q.Identity.Platform, q.Feed.Feed) + "/check?from=sync" } hx-swap="none">Check again</button>
-										</p>
-									}
+										<button type="button" class="underline underline-offset-4" hx-post={ FeedURL(q.Player.ID, q.Identity.Platform, q.Feed.Feed) + "/check?from=sync" } hx-swap="none">Check again</button>
+									</p>
 								}
+								if q.Feed.Enabled && !q.Feed.DownloadEnabled {
+									<span class="ml-1 text-xs text-muted-foreground">(downloads paused)</span>
+								}
+							}
 								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
 									if q.active() {
 										{ Until(q.NextPoll, v.Now) }

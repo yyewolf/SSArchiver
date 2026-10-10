@@ -26,6 +26,14 @@ type UpdateFeedInput struct {
 
 type FeedOutput struct{ Body Feed }
 
+// UpdateFeedDownloadInput pauses or resumes one feed's replay downloads.
+type UpdateFeedDownloadInput struct {
+	FeedPath
+	Body struct {
+		Enabled bool `json:"enabled" doc:"Download this feed's replays"`
+	}
+}
+
 func (a *API) registerFeeds() {
 	huma.Register(a.api, a.admin(huma.Operation{
 		OperationID: "update-feed", Method: http.MethodPatch, Path: "/api/v1/players/{id}/identities/{platform}/feeds/{kind}",
@@ -53,6 +61,23 @@ func (a *API) registerFeeds() {
 			} else if perr != nil {
 				return nil, mapErr(perr)
 			}
+		}
+		return a.feedOutput(ctx, k, f)
+	})
+
+	huma.Register(a.api, a.admin(huma.Operation{
+		OperationID: "update-feed-download", Method: http.MethodPatch, Path: "/api/v1/players/{id}/identities/{platform}/feeds/{kind}/download",
+		Summary: "Pause or resume a feed's replay downloads", Tags: []string{"Players"},
+		Description: "Polling and backfill keep running: rows are still recorded, only their replay downloads wait. " +
+			"Use it to let another feed (e.g. BeatLeader attempts) use the whole download budget for a while.",
+	}), func(ctx context.Context, in *UpdateFeedDownloadInput) (*FeedOutput, error) {
+		k, err := a.feedKey(ctx, in.FeedPath)
+		if err != nil {
+			return nil, err
+		}
+		f, err := a.svc.SetFeedDownload(ctx, k, in.Body.Enabled)
+		if err != nil {
+			return nil, mapErr(err)
 		}
 		return a.feedOutput(ctx, k, f)
 	})

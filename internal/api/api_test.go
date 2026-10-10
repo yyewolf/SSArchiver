@@ -174,6 +174,27 @@ func TestPublicReads(t *testing.T) {
 	}
 }
 
+func TestSetFeedDownload(t *testing.T) {
+	svc, h := newAPI(t, true)
+	id := seed(t, svc)
+	feedPath := "/api/v1/players/" + id + "/identities/scoresaber/feeds/score"
+
+	code, f, _ := call(t, h, http.MethodPatch, feedPath+"/download", map[string]any{"enabled": false})
+	if code != 200 || f["download_enabled"] != false {
+		t.Fatalf("pause = %d %v", code, f)
+	}
+	if sc, err := svc.NextReplay(context.Background(), service.TierNew, "", nil); err != nil || sc != nil {
+		t.Fatalf("paused feed offered %v (%v)", sc, err)
+	}
+	code, f, _ = call(t, h, http.MethodPatch, feedPath+"/download", map[string]any{"enabled": true})
+	if code != 200 || f["download_enabled"] != true {
+		t.Fatalf("resume = %d %v", code, f)
+	}
+	if code, _, _ := call(t, h, http.MethodPatch, "/api/v1/players/"+id+"/identities/scoresaber/feeds/attempt/download", map[string]any{"enabled": true}); code != 404 {
+		t.Fatalf("unknown feed = %d, want 404", code)
+	}
+}
+
 func TestAdminRequiresSession(t *testing.T) {
 	_, h := newAPI(t, false)
 	for _, c := range []struct{ method, path string }{
@@ -185,6 +206,7 @@ func TestAdminRequiresSession(t *testing.T) {
 		{http.MethodPatch, "/api/v1/players/1001/identities/scoresaber"},
 		{http.MethodDelete, "/api/v1/players/1001/identities/scoresaber"},
 		{http.MethodPatch, "/api/v1/players/1001/identities/scoresaber/feeds/attempt"},
+		{http.MethodPatch, "/api/v1/players/1001/identities/scoresaber/feeds/attempt/download"},
 		{http.MethodPost, "/api/v1/players/1001/identities/scoresaber/feeds/attempt/check"},
 		{http.MethodPost, "/api/v1/players/1001/merge"},
 		{http.MethodGet, "/api/v1/sync"},

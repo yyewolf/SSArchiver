@@ -200,6 +200,37 @@ func TestMigrateFreshDatabase(t *testing.T) {
 	}
 }
 
+// TestMigrateAddsDownloadEnabled: an existing database (created before the
+// per-feed download pause) is upgraded with every feed resuming downloads.
+func TestMigrateAddsDownloadEnabled(t *testing.T) {
+	gdb := testutil.OpenDB(t)
+	ctx := context.Background()
+	q := query.Use(gdb)
+	now := time.Now().UTC()
+	if err := q.Player.WithContext(ctx).Create(&model.Player{ID: "a1", Name: "a1", Enabled: true, AddedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.PlayerPlatform.WithContext(ctx).Create(&model.PlayerPlatform{PlayerID: "a1", Platform: model.PlatformScoreSaber, ExternalID: "42", Enabled: true, LinkedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.SyncFeed.WithContext(ctx).Create(&model.SyncFeed{PlayerID: "a1", Platform: model.PlatformScoreSaber, Feed: model.KindScore, Enabled: true, StartedAt: now, Access: model.AccessNA, BackfillState: model.BackfillPending, BackfillPage: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Exec("ALTER TABLE sync_feeds DROP COLUMN download_enabled").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(gdb); err != nil {
+		t.Fatal(err)
+	}
+	var on []bool
+	if err := gdb.Raw("SELECT download_enabled FROM sync_feeds").Scan(&on).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(on) != 1 || !on[0] {
+		t.Fatalf("upgraded feeds must resume downloads, got %v", on)
+	}
+}
+
 func TestVerifyMigrationRejectsCountChange(t *testing.T) {
 	gdb := testutil.OpenDB(t)
 	err := db.VerifyMigration(gdb, db.RowCounts{Players: 99})

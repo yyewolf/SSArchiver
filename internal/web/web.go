@@ -93,6 +93,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/players/{id}/identities/{platform}/enabled", h.requireAdmin(h.setIdentityEnabled))
 	mux.HandleFunc("POST /admin/players/{id}/identities/{platform}/delete", h.requireAdmin(h.unlinkIdentity))
 	mux.HandleFunc("POST /admin/players/{id}/identities/{platform}/feeds/{kind}", h.requireAdmin(h.setFeedEnabled))
+	mux.HandleFunc("POST /admin/players/{id}/identities/{platform}/feeds/{kind}/download", h.requireAdmin(h.setFeedDownload))
 	mux.HandleFunc("POST /admin/players/{id}/identities/{platform}/feeds/{kind}/check", h.requireAdmin(h.checkFeedAccess))
 	mux.HandleFunc("POST /admin/players/{id}/merge", h.requireAdmin(h.mergePlayer))
 	mux.HandleFunc("GET /admin/settings", h.requireAdmin(h.settingsPage))

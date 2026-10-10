@@ -55,7 +55,7 @@ const BackupName = "ssarchiver.pre-platforms.db"
 // foreign key to player_platforms (it emits the constraint on the wrong table).
 const syncFeedsDDL = "CREATE TABLE IF NOT EXISTS `sync_feeds` (" +
 	"`player_id` text NOT NULL,`platform` text NOT NULL,`feed` text NOT NULL," +
-	"`enabled` numeric NOT NULL,`started_at` datetime NOT NULL,`access` text NOT NULL," +
+	"`enabled` numeric NOT NULL,`download_enabled` numeric NOT NULL DEFAULT true,`started_at` datetime NOT NULL,`access` text NOT NULL," +
 	"`access_checked_at` datetime,`remote_total` integer NOT NULL," +
 	"`backfill_state` text NOT NULL,`backfill_page` integer NOT NULL,`backfill_total_pages` integer NOT NULL," +
 	"`backfill_retry_at` datetime,`last_polled_at` datetime,`last_error` text NOT NULL," +
