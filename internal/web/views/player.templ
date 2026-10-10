@@ -226,11 +226,13 @@ templ ScoreTable(v PlayerView) {
 							}
 						}
 					}
-					@table.Body() {
-						for i, g := range v.Groups.Groups {
+				@table.Body() {
+					for i, g := range v.Groups.Groups {
+						if g.Latest != nil {
 							@groupRow(v, i, g)
 						}
 					}
+				}
 				}
 			</div>
 			@pagination(v)

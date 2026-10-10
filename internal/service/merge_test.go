@@ -99,6 +99,28 @@ func TestMergeMovesEverything(t *testing.T) {
 	}
 }
 
+// TestMergeMovesLegacyFiles is the mirror of TestMergeMovesEverything: the
+// source player's archived replay is on the legacy platform (ScoreSaber).
+func TestMergeMovesLegacyFiles(t *testing.T) {
+	svc, _, _ := testutil.NewMultiService(t)
+	ctx := context.Background()
+	alice := mustAdd(t, svc, "1001")
+	tess := mustAdd(t, svc, "https://tp.example/u/abc")
+	testutil.Upsert(t, svc, alice, testutil.Item("1001", 1, 501, testutil.T0, true))
+	testutil.Archive(t, svc, testutil.Row(t, svc, alice, "1"), "alice replay")
+
+	if err := svc.MergePlayers(ctx, alice, tess); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := readReplay(t, svc, testutil.Row(t, svc, tess, "1")); got != "alice replay" {
+		t.Fatalf("content = %q", got)
+	}
+	if res, err := svc.ReconcileStorage(ctx); err != nil || res.Orphans != 0 || res.Requeued != 0 {
+		t.Fatalf("storage after merge: %+v %v", res, err)
+	}
+}
+
 func TestMergeAdoptsPrimaryProfile(t *testing.T) {
 	svc, alice, tess, _ := mergeFixture(t)
 	ctx := context.Background()

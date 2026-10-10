@@ -276,7 +276,9 @@ func existingPlays(ctx context.Context, tx *query.Query, platformName string, pl
 }
 
 // supersede clears personal_best on a player's older scores of the same
-// leaderboard when a PB-only platform lists a new score there (spec §4.6).
+// leaderboard when a PB-only platform lists a new score there (spec §4.6);
+// an older score with the exact same set_at also loses the flag, so a
+// same-second improvement leaves a single personal best.
 func supersede(ctx context.Context, tx *query.Query, fresh []*model.Score) error {
 	q := tx.Score
 	for _, r := range fresh {
@@ -285,7 +287,7 @@ func supersede(ctx context.Context, tx *query.Query, fresh []*model.Score) error
 		}
 		if _, err := q.WithContext(ctx).Where(
 			q.PlayerID.Eq(r.PlayerID), q.Platform.Eq(r.Platform), q.Kind.Eq(model.KindScore),
-			q.LeaderboardID.Eq(r.LeaderboardID), q.ID.Neq(r.ID), q.SetAt.Lt(r.SetAt), q.PersonalBest.Is(true),
+			q.LeaderboardID.Eq(r.LeaderboardID), q.ID.Neq(r.ID), q.SetAt.Lte(r.SetAt), q.PersonalBest.Is(true),
 		).Update(q.PersonalBest, false); err != nil {
 			return fmt.Errorf("supersede scores: %w", err)
 		}

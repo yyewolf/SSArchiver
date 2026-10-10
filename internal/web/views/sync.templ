@@ -233,7 +233,7 @@ templ workerCard(v SyncView) {
 				}
 				for _, l := range v.Status.Limiters {
 					if !l.Snapshot.BlockedUntil.IsZero() {
-						<p class="text-muted-foreground">{ l.Platform } asked us to wait; resuming { Until(l.Snapshot.BlockedUntil, time.Now()) }.</p>
+						<p class="text-muted-foreground">{ l.Platform } asked us to wait; resuming { Until(l.Snapshot.BlockedUntil, v.Now) }.</p>
 					}
 				}
 				<p class="text-muted-foreground">

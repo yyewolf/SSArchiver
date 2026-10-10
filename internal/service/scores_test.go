@@ -230,6 +230,27 @@ func TestUpsertPBOnlySupersedesOlderScores(t *testing.T) {
 	}
 }
 
+func TestUpsertPBOnlySupersedesSameSecond(t *testing.T) {
+	fp := testutil.NewFakePlatform()
+	fp.PBOnly = true
+	svc, _, _ := testutil.NewServiceWith(t, scoresaber.NewPlatform(&testutil.Resolver{Players: testutil.DefaultPlayers()}, nil), fp.Platform())
+	tess := mustAdd(t, svc, "https://tp.example/u/abc")
+	testutil.UpsertFake(t, svc, tess, testutil.FakePlay(model.KindScore, "s1", "lb-a", testutil.T0, true))
+	testutil.Archive(t, svc, testutil.Row(t, svc, tess, "s1"), "old pb")
+	// A same-second improvement must still take the PB flag away from the old row.
+	res := testutil.UpsertFake(t, svc, tess, testutil.FakePlay(model.KindScore, "s3", "lb-a", testutil.T0, true))
+	if res.New != 1 || res.Known != 0 {
+		t.Fatalf("result = %+v", res)
+	}
+	s1, s3 := testutil.Row(t, svc, tess, "s1"), testutil.Row(t, svc, tess, "s3")
+	if s1.PersonalBest || !s3.PersonalBest {
+		t.Fatalf("exactly one PB must remain (the new row): s1=%v s3=%v", s1.PersonalBest, s3.PersonalBest)
+	}
+	if s1.ReplayState != model.ReplayArchived {
+		t.Fatal("the superseded score keeps its archived replay")
+	}
+}
+
 func TestUpsertKeepsArchivedReplayURL(t *testing.T) {
 	svc, _, _ := testutil.NewMultiService(t)
 	tess := mustAdd(t, svc, "https://tp.example/u/abc")

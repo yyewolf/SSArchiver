@@ -85,16 +85,21 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, views.PlayerPage(p, v))
 }
 
-// playerMap is the htmx fragment with every play of one map (spec §6.1).
+// playerMap is the htmx fragment with every play of one map (spec §6.1); it
+// follows merge aliases so old links keep serving the survivor's plays.
 func (h *Handler) playerMap(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	id, _, err := h.svc.ResolvePlayerID(ctx, r.PathValue("id"))
+	if isNotFound(err) {
+		h.notFound(w, r, "No such map.")
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	q := r.URL.Query()
-	if _, err := h.svc.GetPlayer(ctx, id); err != nil || q.Get("key") == "" {
-		if err != nil && !isNotFound(err) {
-			h.serverError(w, r, err)
-			return
-		}
+	if q.Get("key") == "" {
 		h.notFound(w, r, "No such map.")
 		return
 	}

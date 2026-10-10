@@ -114,6 +114,25 @@ func TestPlayerPageMapFragment(t *testing.T) {
 	}
 }
 
+// /p/{mergedAway}/map follows the merge alias and serves the survivor's plays.
+func TestPlayerPageMapFragmentFollowsMerge(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	a := e.seed()
+	tess := testutil.AddPlayer(e.t, e.svc, "https://tp.example/u/def")
+	moved := testutil.FakePlay(model.KindScore, "tm1", "lb-m", testutil.T0.Add(5*time.Minute), true)
+	moved.Leaderboard.SongHash, moved.Leaderboard.GameMode, moved.Leaderboard.Difficulty = "hash501", "Standard", 9
+	testutil.UpsertFake(e.t, e.svc, tess, moved)
+	if err := e.svc.MergePlayers(context.Background(), tess, a); err != nil {
+		t.Fatal(err)
+	}
+	alias := e.do(http.MethodGet, "/p/"+tess+"/map?key=hash501%2FStandard%2F9", nil, htmx("plays-0"))
+	if alias.Code != 200 || strings.Contains(alias.Body.String(), "<html") {
+		t.Fatalf("alias fragment = %d\n%s", alias.Code, alias.Body.String())
+	}
+	contains(t, alias.Body.String(), `href="/s/1"`, `href="/s/tp/tm1"`)
+}
+
 func TestPlayerPagePlatformAndScoreFilters(t *testing.T) {
 	e := newEnvWith(t, testutil.NewFakePlatform())
 	e.setup()
