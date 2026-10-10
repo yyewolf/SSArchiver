@@ -1,8 +1,9 @@
 # SSArchiver
 
-Self-hosted archive for ScoreSaber replays. Track players, keep every replay
-ScoreSaber still offers (it prunes them), and serve them back as pages,
-`.dat` downloads and an embeddable 3D viewer (ArcViewer).
+Self-hosted archive for Beat Saber replays from ScoreSaber and BeatLeader.
+Track players, keep every replay the platforms still offer (ScoreSaber prunes
+them), and serve them back as pages, raw downloads and an embeddable 3D viewer
+(ArcViewer).
 
 ## Run it
 
@@ -50,6 +51,29 @@ The first start of this version migrates the database in place:
 - API: players gain `identities[]` (one per linked platform account, with their sync `feeds[]`); the top-level `last_polled_at`, `last_error` and `backfill` fields are deprecated. `GET /api/v1/players/by/{platform}/{id}` finds a player by account. `GET /api/v1/sync` gains `limiters[]`.
 - A ScoreSaber "player not found" now disables that account instead of the player; enabling the player again re-enables its accounts.
 
+## Players and platforms
+
+A player is one person with up to one account per platform (ScoreSaber,
+BeatLeader). On **Manage**:
+
+- **Add a player** from a profile URL (`https://scoresaber.com/u/…`,
+  `https://beatleader.com/u/…`) or a player ID. Bare IDs are ScoreSaber IDs
+  unless you pick another platform.
+- **Link** another platform account to a player from its row; each badge is one
+  account (click it to pause, resume or unlink it, optionally deleting its
+  replay files). A player keeps at least one account.
+- An account that is already tracked as another player cannot be linked: use
+  **Merge** instead. Merging needs two players with no platform in common; every
+  account, score and replay moves, and the old player URL redirects.
+
+Every account has a readable link that survives merges: `/p/ss/{scoresaberID}`,
+`/p/bl/{beatleaderID}`. The player page shows one row per map with each
+platform's best score; the other plays of a map are one click away.
+
+BeatLeader is paced client-side at 40 API requests and 20 replay-CDN requests per
+10 seconds (its documented limit is 50); these limits are not configurable.
+`SSA_HOURLY_BUDGET` only applies to ScoreSaber.
+
 ## Configuration
 
 | Variable | Flag | Default | Meaning |
@@ -74,7 +98,8 @@ Every archived score page has a **Copy embed code** button:
 ```
 
 Options: `?autoplay=1`, `?loop=1`, `?ui=0`. Raw files are at
-`/r/<score id>.dat` with CORS enabled.
+`/r/<score id>.dat` (ScoreSaber) and `/r/bl/<score id>.bsor` (BeatLeader) with
+CORS enabled; BeatLeader embeds are at `/embed/bl/<score id>`.
 
 ## API
 
@@ -82,6 +107,18 @@ JSON API with OpenAPI docs at `/api/docs`. Reads are public; writes use the
 admin session cookie. Public read endpoints send `Access-Control-Allow-Origin: *`
 (preflight `OPTIONS` answered for `GET, HEAD, OPTIONS`); the admin `/api/v1/sync*`
 surface stays same-origin only, and cross-site writes are rejected outright.
+
+Scores carry `platform`, `kind`, `end_type`, `external_id` (the platform's ID)
+and per-platform `url`/`download_url`/`embed_url`; `id` is the ScoreSaber score
+ID and `0` on other platforms. `GET /api/v1/players/{id}/scores` filters by
+`platform`, `min_score` and `max_score`; `GET /api/v1/scores/{platform}/{id}`
+fetches one score by its platform ID. Accounts are managed with
+`POST /api/v1/players/{id}/identities`, `PATCH`/`DELETE
+/api/v1/players/{id}/identities/{platform}` and `POST
+/api/v1/players/{id}/merge`; conflicts answer 409 with a `code`
+(`identity_linked_elsewhere`, `platform_already_linked`, `last_identity`,
+`merge_platform_conflict`). A merged-away player ID keeps resolving to the
+survivor.
 
 ## Admin password reset
 
@@ -110,7 +147,7 @@ make dev        # templ watch + live reload proxy
 
 ### Adding a platform
 
-Platforms are registered in `internal/app/app.go`. A platform is a client package (like `internal/scoresaber`) that returns a `platform.Platform` descriptor: name/slug, replay extension, profile URL parsing, feeds, and an `Adapter` that resolves players, lists feed pages as `platform.Play`s, downloads replays and exposes its rate limiters. No migration is needed: platform names are plain strings in the database. `internal/testutil.FakePlatform` is a complete minimal example, exercised end to end by `internal/archiver/generic_test.go`.
+Platforms are registered in `internal/app/app.go`. A platform is a client package (like `internal/scoresaber`) that returns a `platform.Platform` descriptor: name/slug, replay extension, profile URL parsing, feeds, and an `Adapter` that resolves players, lists feed pages as `platform.Play`s, downloads replays and exposes its rate limiters. No migration is needed: platform names are plain strings in the database. `internal/testutil.FakePlatform` is a complete minimal example, exercised end to end by `internal/archiver/generic_test.go`. `internal/beatleader` is the second, complete example (client, limiter, adapter, fixtures).
 
 ## Automation
 

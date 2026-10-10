@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,20 +64,30 @@ func getBody(client *http.Client, url string) (int, []byte, error) {
 	return res.StatusCode, b, err
 }
 
-func TestEndToEnd(t *testing.T) {
+// running is an app served on a random port with first-run setup done.
+type running struct {
+	Base   string
+	Client *http.Client // does not follow redirects
+	Cookie *http.Cookie // admin session
+	stop   func() error
+}
+
+// Stop shuts the app down gracefully (also done at test end).
+func (r running) Stop() error { return r.stop() }
+
+func startApp(t *testing.T, opts app.Options) running {
+	t.Helper()
 	// The serve command configures slog from cfg.LogLevel; mirror it so sync
 	// events do not pollute test output while genuine errors stay visible.
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	service.PasswordParams = &argon2id.Params{Memory: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
-	ss := fakeScoreSaber(t)
 	cfg := config.Config{DataDir: t.TempDir(), Listen: "127.0.0.1:0", HourlyBudget: 300, LogLevel: "error"}
-	a, err := app.New(cfg, app.Options{ScoreSaberURL: ss.URL})
+	a, err := app.New(cfg, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
 	var lc net.ListenConfig
 	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -84,39 +96,97 @@ func TestEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- a.Serve(ctx, ln) }()
-	base := "http://" + ln.Addr().String()
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var once sync.Once
+	var stopErr error
+	stop := func() error {
+		once.Do(func() {
+			cancel()
+			select {
+			case stopErr = <-done:
+			case <-time.After(20 * time.Second):
+				stopErr = errors.New("Serve did not stop")
+			}
+			_ = a.Close()
+		})
+		return stopErr
+	}
+	t.Cleanup(func() { _ = stop() })
 
-	// 1. first-run setup
+	r := running{
+		Base:   "http://" + ln.Addr().String(),
+		Client: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		stop:   stop,
+	}
 	form := url.Values{"username": {"admin"}, "password": {"correct horse battery"}, "confirm": {"correct horse battery"}}
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, base+"/setup", strings.NewReader(form.Encode()))
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, r.Base+"/setup", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	res, err := client.Do(req)
+	res, err := r.Client.Do(req)
 	if err != nil || res.StatusCode != http.StatusSeeOther {
 		t.Fatalf("setup: %v %v", res, err)
 	}
-	var cookie *http.Cookie
 	for _, c := range res.Cookies() {
 		if c.Name == httpx.SessionCookie {
-			cookie = c
+			r.Cookie = c
 		}
 	}
 	res.Body.Close()
-	if cookie == nil {
+	if r.Cookie == nil {
 		t.Fatal("no session cookie")
 	}
+	return r
+}
 
-	// 2. add a player through the API
-	req, _ = http.NewRequestWithContext(context.Background(), http.MethodPost, base+"/api/v1/players", bytes.NewBufferString(`{"ref":"https://scoresaber.com/u/1001"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(cookie)
-	res, err = client.Do(req)
-	if err != nil {
-		t.Fatalf("add player: %v", err)
+// do sends an authenticated request with an optional JSON body.
+func (r running) do(t *testing.T, method, path, body string) (int, []byte) {
+	t.Helper()
+	var rd io.Reader
+	if body != "" {
+		rd = bytes.NewBufferString(body)
 	}
-	body, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != http.StatusCreated {
+	req, _ := http.NewRequestWithContext(context.Background(), method, r.Base+path, rd)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.AddCookie(r.Cookie)
+	res, err := r.Client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, b
+}
+
+// waitArchived polls an API score path until its replay is archived (10s max).
+func (r running) waitArchived(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		status, body, err := getBody(r.Client, r.Base+path)
+		if err == nil && status == 200 {
+			var s struct {
+				Replay struct {
+					State string `json:"state"`
+				} `json:"replay"`
+			}
+			_ = json.Unmarshal(body, &s)
+			if s.Replay.State == "archived" {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s was not archived within 10s", path)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestEndToEnd(t *testing.T) {
+	ss := fakeScoreSaber(t)
+	r := startApp(t, app.Options{ScoreSaberURL: ss.URL})
+
+	code, body := r.do(t, http.MethodPost, "/api/v1/players", `{"ref":"https://scoresaber.com/u/1001"}`)
+	if code != http.StatusCreated {
 		t.Fatalf("add player: %s", body)
 	}
 	var created struct {
@@ -126,54 +196,20 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("add player must return an opaque player ID: %q %v", created.ID, err)
 	}
 
-	// 3. the worker polls, lists and archives the replay
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		status, body, err := getBody(client, base+"/api/v1/scores/777")
-		if err == nil && status == 200 {
-			var s struct {
-				Replay struct {
-					State string `json:"state"`
-				} `json:"replay"`
-			}
-			_ = json.Unmarshal(body, &s)
-			if s.Replay.State == "archived" {
-				break
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("replay was not archived within 10s")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	r.waitArchived(t, "/api/v1/scores/777")
 
-	// 4. download it and load the public pages
-	status, got, err := getBody(client, base+"/r/777.dat")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status != http.StatusOK {
-		t.Fatalf("download status %d", status)
-	}
-	if !bytes.Equal(got, replayBytes) {
-		t.Fatalf("downloaded %q", got)
+	status, got, err := getBody(r.Client, r.Base+"/r/777.dat")
+	if err != nil || status != http.StatusOK || !bytes.Equal(got, replayBytes) {
+		t.Fatalf("download: %d %q %v", status, got, err)
 	}
 	for _, p := range []string{"/", "/p/" + created.ID, "/s/777", "/healthz", "/api/docs"} {
-		status, _, err := getBody(client, base+p)
+		status, _, err := getBody(r.Client, r.Base+p)
 		if err != nil || status != 200 {
 			t.Fatalf("GET %s: %v %v", p, status, err)
 		}
 	}
-
-	// 5. graceful shutdown
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Serve returned %v", err)
-		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("Serve did not stop")
+	if err := r.Stop(); err != nil {
+		t.Fatalf("Serve returned %v", err)
 	}
 }
 
