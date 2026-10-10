@@ -41,3 +41,6 @@ go.work.sum
 !/docker/data/.keep
 internal/viewer/dist/*
 !internal/viewer/dist/PLACEHOLDER
+
+# Agent worktrees
+/.worktrees/
