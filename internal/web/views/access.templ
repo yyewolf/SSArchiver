@@ -1,0 +1,48 @@
+package views
+
+import (
+	"github.com/yyewolf/ssarchiver/internal/platform"
+	"github.com/yyewolf/ssarchiver/internal/web/components/alert"
+	"github.com/yyewolf/ssarchiver/internal/web/components/button"
+	"github.com/yyewolf/ssarchiver/internal/web/components/icon"
+)
+
+// AccessHint tells the admin what a player must change for a private feed
+// (spec §6.3). check carries the "Check again" button's htmx attributes.
+// Admin pages only.
+templ AccessHint(h *platform.Hint, check templ.Attributes) {
+	if h != nil {
+		@alert.Alert(alert.Props{}) {
+			@icon.TriangleAlert()
+			@alert.Title() {
+				{ h.Title }
+			}
+			@alert.Description() {
+				<div class="flex flex-col gap-2">
+					if h.Intro != "" {
+						<p>{ h.Intro }</p>
+					}
+					if len(h.Steps) > 0 {
+						<ol class="ml-4 list-decimal">
+							for _, s := range h.Steps {
+								<li>{ s }</li>
+							}
+						</ol>
+					}
+					<div class="flex flex-wrap items-center gap-2">
+						if h.LinkURL != "" {
+							<a class="font-medium underline underline-offset-4" href={ templ.SafeURL(h.LinkURL) } target="_blank" rel="noopener">{ h.LinkText }</a>
+						}
+						@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: check}) {
+							@icon.RefreshCw()
+							Check again
+						}
+					</div>
+					if h.Note != "" {
+						<p class="text-xs">{ h.Note }</p>
+					}
+				</div>
+			}
+		}
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
+	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/service"
 	"github.com/yyewolf/ssarchiver/internal/web/components/toast"
 	"github.com/yyewolf/ssarchiver/internal/web/views"
@@ -34,8 +35,8 @@ func (h *Handler) adminPlayersView(r *http.Request) (views.AdminPlayersView, err
 	return views.AdminPlayersView{Players: players, Platforms: h.svc.Platforms().All(), Now: h.svc.Now()}, err
 }
 
-// renderRow re-renders one player's row with a success toast.
-func (h *Handler) renderRow(w http.ResponseWriter, r *http.Request, id, title string) {
+// renderRow re-renders one player's row with a toast.
+func (h *Handler) renderRow(w http.ResponseWriter, r *http.Request, id string, t toast.Type, title string) {
 	v, err := h.adminPlayersView(r)
 	if err != nil {
 		h.serverError(w, r, err)
@@ -46,7 +47,72 @@ func (h *Handler) renderRow(w http.ResponseWriter, r *http.Request, id, title st
 		h.serverError(w, r, err)
 		return
 	}
-	render(w, r, http.StatusOK, views.PlayerRowToast(pl, v, title))
+	render(w, r, http.StatusOK, views.PlayerRowToast(pl, v, t, title))
+}
+
+// accessToast says what an access check found.
+func accessToast(f *model.SyncFeed, okTitle string) (toast.Type, string) {
+	switch {
+	case f.Access == model.AccessPrivate:
+		return toast.TypeWarning, "Access is private"
+	case f.LastError != "":
+		return toast.TypeError, "Could not check access"
+	}
+	return toast.TypeSuccess, okTitle
+}
+
+func feedKey(r *http.Request) service.FeedKey {
+	return service.FeedKey{PlayerID: r.PathValue("id"), Platform: r.PathValue("platform"), Kind: r.PathValue("kind")}
+}
+
+func (h *Handler) setFeedEnabled(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	ctx := r.Context()
+	k := feedKey(r)
+	enabled := r.PostFormValue("enabled") == "true"
+	f, err := h.svc.SetFeedEnabled(ctx, k, enabled)
+	switch {
+	case errors.Is(err, service.ErrFeedNotOptional):
+		h.toastOnly(w, r, toast.TypeError, "Could not change feed", sentence(err))
+		return
+	case isNotFound(err):
+		h.toastOnly(w, r, toast.TypeError, "Account not found", "")
+		return
+	case err != nil:
+		h.serverError(w, r, err)
+		return
+	}
+	name := views.FeedName(k.Kind)
+	if !enabled {
+		h.renderRow(w, r, k.PlayerID, toast.TypeSuccess, "Stopped archiving "+name)
+		return
+	}
+	if checked, _ := h.svc.CheckFeedAccess(ctx, k); checked != nil { // a failed probe is recorded on the feed
+		f = checked
+	}
+	t, title := accessToast(f, "Archiving "+name)
+	h.renderRow(w, r, k.PlayerID, t, title)
+}
+
+func (h *Handler) checkFeedAccess(w http.ResponseWriter, r *http.Request) {
+	k := feedKey(r)
+	f, err := h.svc.CheckFeedAccess(r.Context(), k)
+	if f == nil {
+		if isNotFound(err) {
+			h.toastOnly(w, r, toast.TypeError, "Feed not found", "")
+			return
+		}
+		h.serverError(w, r, err)
+		return
+	}
+	t, title := accessToast(f, "Access granted")
+	if r.URL.Query().Get("from") == "sync" { // the live panel refreshes on its own
+		h.toastOnly(w, r, t, title, f.LastError)
+		return
+	}
+	h.renderRow(w, r, k.PlayerID, t, title)
 }
 
 func (h *Handler) adminPlayers(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +190,7 @@ func (h *Handler) setPlayerEnabled(w http.ResponseWriter, r *http.Request) {
 	if !enabled {
 		title = "Tracking paused"
 	}
-	h.renderRow(w, r, id, title)
+	h.renderRow(w, r, id, toast.TypeSuccess, title)
 }
 
 func (h *Handler) linkIdentity(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +210,7 @@ func (h *Handler) linkIdentity(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.renderRow(w, r, id, "Account linked")
+	h.renderRow(w, r, id, toast.TypeSuccess, "Account linked")
 }
 
 func (h *Handler) setIdentityEnabled(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +231,7 @@ func (h *Handler) setIdentityEnabled(w http.ResponseWriter, r *http.Request) {
 	if !enabled {
 		title = "Account paused"
 	}
-	h.renderRow(w, r, id, title)
+	h.renderRow(w, r, id, toast.TypeSuccess, title)
 }
 
 func (h *Handler) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +251,7 @@ func (h *Handler) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.renderRow(w, r, id, "Account unlinked")
+	h.renderRow(w, r, id, toast.TypeSuccess, "Account unlinked")
 }
 
 func (h *Handler) mergePlayer(w http.ResponseWriter, r *http.Request) {

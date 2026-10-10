@@ -84,7 +84,7 @@ func addHelp(ps []platform.Platform) string {
 
 func identityVariant(id service.Identity) badge.Variant {
 	switch {
-	case id.LastError != "":
+	case id.LastError != "" || hasPrivateFeed(id):
 		return badge.VariantDestructive
 	case !id.Enabled:
 		return badge.VariantOutline
@@ -263,6 +263,17 @@ templ AdminPlayerRow(pl service.PlayerSummary, v AdminPlayersView) {
 					@linkMenu(pl, un)
 				}
 			</div>
+			for _, id := range pl.Identities {
+				for _, fs := range OptionalFeeds(ctx, id) {
+					if fs.Private() {
+						<div class="mt-2 max-w-md">
+							@AccessHint(fs.Spec.AccessHint, templ.Attributes{
+								"hx-post": FeedURL(pl.ID, id.Platform, fs.Spec.Kind) + "/check", "hx-target": "#player-" + pl.ID, "hx-swap": "outerHTML",
+							})
+						</div>
+					}
+				}
+			}
 		}
 		@table.Cell() {
 			if pl.Enabled {
@@ -326,12 +337,12 @@ templ AdminPlayerRow(pl service.PlayerSummary, v AdminPlayersView) {
 templ identityMenu(pl service.PlayerSummary, id service.Identity) {
 	<details>
 		<summary class={ summaryClass } title={ PlatformName(ctx, id.Platform) + " account " + id.ExternalID }>
-			@badge.Badge(badge.Props{Variant: identityVariant(id)}) {
-				{ PlatformName(ctx, id.Platform) }
-				if id.LastError != "" {
-					@icon.TriangleAlert(icon.Props{Size: 12})
-				}
+		@badge.Badge(badge.Props{Variant: identityVariant(id)}) {
+			{ PlatformName(ctx, id.Platform) }
+			if id.LastError != "" || hasPrivateFeed(id) {
+				@icon.TriangleAlert(icon.Props{Size: 12})
 			}
+		}
 		</summary>
 		<div class={ menuClass }>
 			<p class="font-mono break-all text-muted-foreground">{ id.ExternalID }</p>
@@ -348,6 +359,21 @@ templ identityMenu(pl service.PlayerSummary, id service.Identity) {
 					}
 				}
 			</form>
+			for _, fs := range OptionalFeeds(ctx, id) {
+				<form hx-post={ FeedURL(pl.ID, id.Platform, fs.Spec.Kind) } hx-target={ "#player-" + pl.ID } hx-swap="outerHTML" { feedConfirm(ctx, pl, id, fs)... }>
+					<input type="hidden" name="enabled" value={ strconv.FormatBool(!fs.On()) }/>
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm, Class: "w-full"}) {
+						if fs.On() {
+							{ "Stop archiving " + FeedName(fs.Spec.Kind) }
+						} else {
+							{ "Archive " + FeedName(fs.Spec.Kind) }
+						}
+					}
+				</form>
+				if fs.On() {
+					<p class="text-muted-foreground">{ feedStatus(fs) }</p>
+				}
+			}
 			if len(pl.Identities) > 1 {
 				<form
 					hx-post={ identityURL(pl.ID, id.Platform) + "/delete" }
@@ -434,9 +460,9 @@ templ PlayerAdded(v AdminPlayersView, name string) {
 	@ToastOOB(toast.TypeSuccess, "Now tracking "+name, "Their history is being archived in the background.")
 }
 
-templ PlayerRowToast(pl service.PlayerSummary, v AdminPlayersView, title string) {
+templ PlayerRowToast(pl service.PlayerSummary, v AdminPlayersView, t toast.Type, title string) {
 	@AdminPlayerRow(pl, v)
-	@ToastOOB(toast.TypeSuccess, title, pl.Name)
+	@ToastOOB(t, title, pl.Name)
 }
 
 templ PlayersMerged(v AdminPlayersView, title string) {
