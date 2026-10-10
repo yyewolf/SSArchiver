@@ -23,6 +23,8 @@ var (
 	ErrIdentityLinkedElsewhere = errors.New("account is tracked as another player")
 	ErrPlatformAlreadyLinked   = errors.New("this player already has an account on that platform")
 	ErrLastIdentity            = errors.New("a player keeps at least one account; delete the player instead")
+	ErrMergeConflict           = errors.New("both players have an account on the same platform")
+	ErrMergeSelf               = errors.New("a player cannot be merged into itself")
 )
 
 // LinkedElsewhereError reports an account already tracked as another player

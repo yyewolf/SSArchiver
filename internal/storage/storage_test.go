@@ -207,3 +207,36 @@ func TestRemoveDir(t *testing.T) {
 		}
 	}
 }
+
+func TestLink(t *testing.T) {
+	s, _ := newStore(t)
+	from := storage.Loc{PlayerID: "p1", Dir: "testplat", RowID: 7, Ext: ".tpr"}
+	to := storage.Loc{PlayerID: "p2", Dir: "testplat", RowID: 7, Ext: ".tpr"}
+	if _, _, err := s.Put(from, strings.NewReader("bytes")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Link(from, to); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := os.Stat(s.Path(from))
+	b, err := os.Stat(s.Path(to))
+	if err != nil || !os.SameFile(a, b) {
+		t.Fatalf("expected a hard link: %v", err)
+	}
+	kept := storage.Loc{PlayerID: "p3", RowID: 7, Ext: ".tpr"}
+	if _, _, err := s.Put(kept, strings.NewReader("already there")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Link(from, kept); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(s.Path(kept)); string(got) != "already there" {
+		t.Fatal("an existing target is kept")
+	}
+	if err := s.Link(storage.Loc{PlayerID: "p1", RowID: 99, Ext: ".tpr"}, storage.Loc{PlayerID: "p4", RowID: 99, Ext: ".tpr"}); err == nil {
+		t.Fatal("a missing source is an error")
+	}
+	if err := s.Link(from, storage.Loc{PlayerID: "../x", RowID: 1, Ext: ".tpr"}); !errors.Is(err, storage.ErrInvalidID) {
+		t.Fatalf("invalid target: %v", err)
+	}
+}

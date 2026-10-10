@@ -151,6 +151,33 @@ func (s *Store) Remove(l Loc) error {
 	return nil
 }
 
+// Link makes the replay at from also available at to: a hard link, or an
+// atomic, fsynced copy when the filesystem refuses links. An existing target
+// is kept, so a merge rerun after a crash is harmless (spec §6.2).
+func (s *Store) Link(from, to Loc) error {
+	if !from.valid() || !to.valid() {
+		return fmt.Errorf("%w: %+v → %+v", ErrInvalidID, from, to)
+	}
+	dst := s.Path(to)
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(s.dir(to), 0o750); err != nil {
+		return fmt.Errorf("%w: mkdir %s: %w", ErrWrite, s.dir(to), err)
+	}
+	src := s.Path(from)
+	if err := os.Link(src, dst); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("storage: link: %w", err)
+	}
+	defer func() { _ = in.Close() }()
+	_, _, err = s.Put(to, in)
+	return err
+}
+
 func (s *Store) RemovePlayer(playerID string) error {
 	if !ValidPlayerID(playerID) {
 		return fmt.Errorf("%w: %q", ErrInvalidID, playerID)

@@ -13,48 +13,54 @@ import (
 	"github.com/yyewolf/ssarchiver/internal/platform"
 )
 
-// FakePlatform is a scripted non-legacy platform ("testplat", slug "tp") for
-// genericity tests (spec §9): a required score feed and an optional attempt
-// feed that needs access, string IDs, replays fetched by URL.
+// FakePlatform is a scripted non-legacy platform for genericity tests (spec
+// §9): a required score feed and an optional attempt feed that needs access,
+// string IDs, replays fetched by URL. NewFakePlatform is "testplat" (slug
+// "tp"); NewFakePlatformAs makes more of them.
 type FakePlatform struct {
-	mu       sync.Mutex
-	PerPage  int
-	Profiles map[string]platform.Profile
-	plays    map[string][]platform.Play // kind + "/" + account, newest first
-	Replays  map[string][]byte          // replay URL → bytes
-	Calls    []string                   // "kind:account:page"
-	Limiter  *FakeLimiter
-	PBOnly   bool // registry PBOnly; set before calling Platform()
-	Refused  int  // reported as PlayPage.Refused on every page
+	mu          sync.Mutex
+	Name, Slug  string
+	DisplayName string
+	urlRe       *regexp.Regexp
+	PerPage     int
+	Profiles    map[string]platform.Profile
+	plays       map[string][]platform.Play // kind + "/" + account, newest first
+	Replays     map[string][]byte          // replay URL → bytes
+	Calls       []string                   // "kind:account:page"
+	Limiter     *FakeLimiter
+	PBOnly      bool // registry PBOnly; set before calling Platform()
+	Refused     int  // reported as PlayPage.Refused on every page
 }
 
-func NewFakePlatform() *FakePlatform {
+func NewFakePlatform() *FakePlatform { return NewFakePlatformAs("testplat", "tp", "TestPlat") }
+
+// NewFakePlatformAs is a fake platform with its own name, slug ([a-z]{2,8})
+// and display name; its profile URLs are https://{slug}.example/u/{id}.
+func NewFakePlatformAs(name, slug, displayName string) *FakePlatform {
 	return &FakePlatform{
+		Name: name, Slug: slug, DisplayName: displayName,
+		urlRe:   regexp.MustCompile(`^https://` + slug + `\.example/u/([a-z0-9]{1,16})$`),
 		PerPage: 2,
 		Profiles: map[string]platform.Profile{
-			"abc": {ExternalID: "abc", Name: "Tess", Country: "SE", AvatarURL: "https://img.tp.example/abc.png"},
-			"def": {ExternalID: "def", Name: "Dee", Country: "NO", AvatarURL: "https://img.tp.example/def.png"},
+			"abc": {ExternalID: "abc", Name: "Tess", Country: "SE", AvatarURL: "https://img." + slug + ".example/abc.png"},
+			"def": {ExternalID: "def", Name: "Dee", Country: "NO", AvatarURL: "https://img." + slug + ".example/def.png"},
 		},
 		plays:   map[string][]platform.Play{},
 		Replays: map[string][]byte{},
-		Limiter: &FakeLimiter{},
+		Limiter: &FakeLimiter{name: name},
 	}
 }
 
-var (
-	tpURLRe = regexp.MustCompile(`^https://tp\.example/u/([a-z0-9]{1,16})$`)
-	tpIDRe  = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
-)
+var tpIDRe = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
 
 // Platform is the registry entry.
 func (f *FakePlatform) Platform() platform.Platform {
 	return platform.Platform{
-		Name: "testplat", Slug: "tp", DisplayName: "TestPlat", Priority: 50, ReplayExt: ".tpr",
-		PBOnly:     f.PBOnly,
-		ImageHosts: []string{"https://img.tp.example"},
-		ProfileURL: func(id string) string { return "https://tp.example/u/" + id },
+		Name: f.Name, Slug: f.Slug, DisplayName: f.DisplayName, Priority: 50, ReplayExt: ".tpr", PBOnly: f.PBOnly,
+		ImageHosts: []string{"https://img." + f.Slug + ".example"},
+		ProfileURL: func(id string) string { return "https://" + f.Slug + ".example/u/" + id },
 		ParseURL: func(in string) (string, bool) {
-			m := tpURLRe.FindStringSubmatch(in)
+			m := f.urlRe.FindStringSubmatch(in)
 			if m == nil {
 				return "", false
 			}
@@ -65,7 +71,7 @@ func (f *FakePlatform) Platform() platform.Platform {
 			{Kind: model.KindScore},
 			{Kind: model.KindAttempt, Optional: true, NeedsAccess: true, AccessHint: &platform.Hint{
 				Title: "History is private", Steps: []string{"Open settings", "Make history public"},
-				LinkText: "Open settings", LinkURL: "https://tp.example/settings",
+				LinkText: "Open settings", LinkURL: "https://" + f.Slug + ".example/settings",
 			}},
 		},
 		Adapter: f,
@@ -89,7 +95,7 @@ func (f *FakePlatform) Resolve(_ context.Context, id string) (platform.Profile, 
 	defer f.mu.Unlock()
 	p, ok := f.Profiles[id]
 	if !ok {
-		return platform.Profile{}, fmt.Errorf("%w: testplat player %s", platform.ErrNotFound, id)
+		return platform.Profile{}, fmt.Errorf("%w: %s player %s", platform.ErrNotFound, f.Name, id)
 	}
 	return p, nil
 }
@@ -128,10 +134,11 @@ func (f *FakePlatform) ReplayLimiter(string) string  { return f.Limiter.Name() }
 // FakeLimiter is ready unless blocked.
 type FakeLimiter struct {
 	mu    sync.Mutex
+	name  string
 	until time.Time
 }
 
-func (l *FakeLimiter) Name() string { return "testplat" }
+func (l *FakeLimiter) Name() string { return l.name }
 
 func (l *FakeLimiter) Block(until time.Time) {
 	l.mu.Lock()
