@@ -239,7 +239,7 @@ func (s *Service) AddPlayer(ctx context.Context, ref, platformName string) (*mod
 		}
 		return nil, fmt.Errorf("service: add player: %w", err)
 	}
-	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: Ptr(p.ID), Platform: Ptr(plat.Name), Message: "player added: " + p.Name})
+	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: new(p.ID), Platform: new(plat.Name), Message: "player added: " + p.Name})
 	s.Wake()
 	return p, nil
 }
@@ -389,6 +389,6 @@ func (s *Service) DeletePlayer(ctx context.Context, id string, deleteFiles bool)
 			return err
 		}
 	}
-	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: Ptr(id), Message: fmt.Sprintf("player deleted (files deleted: %v)", deleteFiles)})
+	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: new(id), Message: fmt.Sprintf("player deleted (files deleted: %v)", deleteFiles)})
 	return nil
 }

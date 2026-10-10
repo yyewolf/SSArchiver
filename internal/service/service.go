@@ -94,8 +94,6 @@ func (s *Service) Ping(ctx context.Context) error {
 	return sqlDB.PingContext(ctx)
 }
 
-func Ptr[T any](v T) *T { return &v }
-
 func notFound(err error, what string) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("%w: %s", ErrNotFound, what)

@@ -13,9 +13,9 @@ import (
 func TestListEvents(t *testing.T) {
 	svc, _, clk := testutil.NewService(t)
 	ctx := context.Background()
-	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindScores, PlayerID: service.Ptr("paaaaaaaaaaa"), Message: "a"})
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindScores, PlayerID: new("paaaaaaaaaaa"), Message: "a"})
 	clk.Advance(time.Second)
-	svc.Log(ctx, model.SyncEvent{Level: model.LevelError, Kind: model.KindReplay, PlayerID: service.Ptr("pbbbbbbbbbbb"), Message: "b"})
+	svc.Log(ctx, model.SyncEvent{Level: model.LevelError, Kind: model.KindReplay, PlayerID: new("pbbbbbbbbbbb"), Message: "b"})
 	clk.Advance(time.Second)
 	svc.Log(ctx, model.SyncEvent{Level: model.LevelWarn, Kind: model.KindReplay, Message: "c"})
 

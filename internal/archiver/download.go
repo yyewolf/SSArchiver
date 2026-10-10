@@ -37,8 +37,8 @@ func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 	w.setStatus(StateRunning, describe(sc))
 	ev := func(level, msg string) {
 		w.svc.Log(ctx, model.SyncEvent{
-			Level: level, Kind: model.KindReplay, PlayerID: service.Ptr(sc.PlayerID), ScoreID: service.Ptr(sc.ID),
-			Platform: service.Ptr(sc.Platform), Feed: service.Ptr(sc.Kind), Message: msg,
+			Level: level, Kind: model.KindReplay, PlayerID: new(sc.PlayerID), ScoreID: new(sc.ID),
+			Platform: new(sc.Platform), Feed: new(sc.Kind), Message: msg,
 		})
 	}
 	p, err := w.platform(sc.Platform)

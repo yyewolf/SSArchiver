@@ -13,8 +13,8 @@ import (
 // feedEvent builds a sync event about one feed.
 func feedEvent(wf *service.WorkFeed, level, kind, msg string) model.SyncEvent {
 	return model.SyncEvent{
-		Level: level, Kind: kind, PlayerID: service.Ptr(wf.PlayerID),
-		Platform: service.Ptr(wf.Platform), Feed: service.Ptr(wf.Feed), Message: msg,
+		Level: level, Kind: kind, PlayerID: new(wf.PlayerID),
+		Platform: new(wf.Platform), Feed: new(wf.Feed), Message: msg,
 	}
 }
 
