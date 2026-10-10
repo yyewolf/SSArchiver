@@ -43,12 +43,16 @@ func newFeed(playerID, platformName, kind string, now time.Time, access string) 
 	}
 }
 
-// workFeedSQL selects the enabled, accessible feeds of enabled accounts of
-// enabled players (spec §5.1).
-const workFeedSQL = "SELECT f.*, pp.external_id AS external_id, p.name AS player_name FROM sync_feeds f " +
+// feedSelect joins enabled feeds to their enabled account and player; the
+// account ID is what the platform is called with (never the player ID).
+const feedSelect = "SELECT f.*, pp.external_id AS external_id, p.name AS player_name FROM sync_feeds f " +
 	"JOIN player_platforms pp ON pp.player_id = f.player_id AND pp.platform = f.platform " +
 	"JOIN players p ON p.id = f.player_id " +
-	"WHERE f.enabled AND pp.enabled AND p.enabled AND f.access IN (?, ?)"
+	"WHERE f.enabled AND pp.enabled AND p.enabled"
+
+// workFeedSQL selects the feeds the worker may read: no probe needed, or
+// access public (spec §5.1).
+const workFeedSQL = feedSelect + " AND f.access IN (?, ?)"
 
 func (s *Service) workFeeds(ctx context.Context, clause string, args ...any) ([]*WorkFeed, error) {
 	var out []*WorkFeed

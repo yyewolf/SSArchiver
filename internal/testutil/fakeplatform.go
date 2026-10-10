@@ -30,6 +30,14 @@ type FakePlatform struct {
 	Limiter     *FakeLimiter
 	PBOnly      bool // registry PBOnly; set before calling Platform()
 	Refused     int  // reported as PlayPage.Refused on every page
+
+	Access      map[string]string // kind/account → what ProbeAccess reports (default public)
+	AccessTotal int64             // remote total ProbeAccess reports
+	ProbeErr    error             // ProbeAccess fails with it when set
+	Probes      []string          // "kind:account" per probe
+	FeedErr     map[string]error  // kind/account → FeedPage fails with it
+	ReplayErr   map[string]error  // replay URL → Replay fails with it
+	ReplayCalls []string          // replay URLs requested
 }
 
 func NewFakePlatform() *FakePlatform { return NewFakePlatformAs("testplat", "tp", "TestPlat") }
@@ -48,6 +56,10 @@ func NewFakePlatformAs(name, slug, displayName string) *FakePlatform {
 		plays:   map[string][]platform.Play{},
 		Replays: map[string][]byte{},
 		Limiter: &FakeLimiter{name: name},
+
+		Access:    map[string]string{},
+		FeedErr:   map[string]error{},
+		ReplayErr: map[string]error{},
 	}
 }
 
@@ -104,6 +116,9 @@ func (f *FakePlatform) FeedPage(_ context.Context, kind, account string, page in
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, fmt.Sprintf("%s:%s:%d", kind, account, page))
+	if err := f.FeedErr[kind+"/"+account]; err != nil {
+		return platform.PlayPage{}, err
+	}
 	all := f.plays[kind+"/"+account]
 	total := (len(all) + f.PerPage - 1) / f.PerPage
 	var out []platform.Play
@@ -113,13 +128,29 @@ func (f *FakePlatform) FeedPage(_ context.Context, kind, account string, page in
 	return platform.PlayPage{Plays: out, TotalPages: total, Refused: f.Refused}, nil
 }
 
-func (f *FakePlatform) ProbeAccess(context.Context, string, string) (string, int64, error) {
-	return model.AccessPublic, 0, nil
+func (f *FakePlatform) ProbeAccess(_ context.Context, kind, account string) (string, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if kind == model.KindScore {
+		return model.AccessNA, 0, nil
+	}
+	f.Probes = append(f.Probes, kind+":"+account)
+	if f.ProbeErr != nil {
+		return "", 0, f.ProbeErr
+	}
+	if a, ok := f.Access[kind+"/"+account]; ok {
+		return a, f.AccessTotal, nil
+	}
+	return model.AccessPublic, f.AccessTotal, nil
 }
 
 func (f *FakePlatform) Replay(_ context.Context, ref platform.ReplayRef) (io.ReadCloser, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.ReplayCalls = append(f.ReplayCalls, ref.URL)
+	if err := f.ReplayErr[ref.URL]; err != nil {
+		return nil, err
+	}
 	b, ok := f.Replays[ref.URL]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", platform.ErrNotFound, ref.URL)
