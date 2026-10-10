@@ -1,0 +1,40 @@
+{
+  "metadata": {"itemsPerPage": 100, "page": 1, "total": 3},
+  "data": [
+    {
+      "id": 12164051, "baseScore": 825292, "modifiedScore": 825292, "accuracy": 0.797295, "pp": 181.86964,
+      "rank": 1736, "modifiers": "", "badCuts": 13, "missedNotes": 16, "bombCuts": 0, "wallsHit": 0,
+      "fullCombo": false, "maxCombo": 423, "hmd": 256, "controller": 0, "playerId": "76561198038925092",
+      "timeset": "1706356788", "timepost": 1706356788, "leaderboardId": "1d3f5x71",
+      "replay": "https://cdn.replays.beatleader.xyz/12164051-76561198038925092-Expert-Standard-57511EE48555E00E031BD3B1DF90BA7BE5712B56.bsor",
+      "player": null,
+      "leaderboard": {
+        "id": "1d3f5x71",
+        "song": {"id": "1d3f5", "hash": "57511ee48555e00e031bd3b1df90ba7be5712b56", "name": "Night Raid with a Dragon", "subName": "", "author": "Camellia", "mapper": "nolan121405", "coverImage": "https://eu.cdn.beatsaver.com/57511ee48555e00e031bd3b1df90ba7be5712b56.jpg"},
+        "difficulty": {"id": 1, "value": 7, "mode": 1, "modeName": "Standard", "difficultyName": "Expert", "status": 3, "stars": 7.2064004, "maxScore": 1035115}
+      }
+    },
+    {
+      "id": 12163441, "baseScore": 609589, "modifiedScore": 609589, "accuracy": 0.850437, "pp": 0,
+      "rank": 71, "modifiers": "", "badCuts": 5, "missedNotes": 4, "fullCombo": false, "maxCombo": 159, "hmd": 256,
+      "timeset": "1706354762", "timepost": 1706354762, "leaderboardId": "1075671",
+      "replay": "https://api.beatleader.xyz/replays-storage/12163441-76561198038925092-Expert-Standard-346AB7665240AD1C4DC4F3C946227FC738685520.bsor",
+      "leaderboard": {
+        "id": "1075671",
+        "song": {"hash": "346ab7665240ad1c4dc4f3c946227fc738685520", "name": "MORE", "subName": "ft. Madison Beer, (G)I-DLE, Lexie Liu, Jaira Burns, Seraphine", "author": "KDA", "mapper": "Ben Records", "coverImage": "https://eu.cdn.beatsaver.com/346ab7665240ad1c4dc4f3c946227fc738685520.jpg"},
+        "difficulty": {"value": 7, "modeName": "Standard", "difficultyName": "Expert", "status": 0, "stars": null, "maxScore": 716795}
+      }
+    },
+    {
+      "id": 12163193, "baseScore": 905030, "modifiedScore": 905030, "accuracy": 0.7819003, "pp": 0,
+      "rank": 17, "modifiers": "DA,FS", "badCuts": 24, "missedNotes": 20, "fullCombo": false, "maxCombo": 179, "hmd": 9999,
+      "timeset": "1706353905", "timepost": 1706353905, "leaderboardId": "113e791",
+      "replay": null,
+      "leaderboard": {
+        "id": "113e791",
+        "song": {"hash": "e2d0a2d90cce2daf0cc4a49f347b24ba368c07c7", "name": "Drum Go Dum", "subName": null, "author": "KDA", "mapper": "Joy", "coverImage": "https://eu.cdn.beatsaver.com/e2d0a2d90cce2daf0cc4a49f347b24ba368c07c7.jpg"},
+        "difficulty": {"value": 9, "modeName": "Standard", "difficultyName": "ExpertPlus", "status": 2, "stars": 8.5, "maxScore": 1157475}
+      }
+    }
+  ]
+}
