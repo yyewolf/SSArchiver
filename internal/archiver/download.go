@@ -75,6 +75,12 @@ func (w *Worker) download(ctx context.Context, sc *model.Score) error {
 	case errors.Is(err, platform.ErrRateLimited):
 		w.svc.Log(ctx, model.SyncEvent{Level: model.LevelWarn, Kind: model.KindRateLimit, Message: "rate limited by " + p.DisplayName + "; waiting for the limit to reset"})
 		return nil
+	case errors.Is(err, platform.ErrUnauthorized) && needsAccess(p, sc.Kind):
+		if err := w.svc.MarkFeedPrivate(ctx, service.FeedKey{PlayerID: sc.PlayerID, Platform: sc.Platform, Kind: sc.Kind}); err != nil {
+			return err
+		}
+		ev(model.LevelWarn, accessLostMessage(p, sc.Kind)) // the replay stays pending, no attempt is counted
+		return nil
 	case errors.Is(err, platform.ErrNotFound):
 		if err := w.svc.MarkReplayGone(ctx, sc.ID, "replay no longer available on "+p.DisplayName); err != nil {
 			return err

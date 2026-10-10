@@ -18,6 +18,20 @@ func feedEvent(wf *service.WorkFeed, level, kind, msg string) model.SyncEvent {
 	}
 }
 
+// needsAccess reports whether a feed's access is probed (only those can turn private).
+func needsAccess(p platform.Platform, kind string) bool {
+	f, ok := p.Feed(kind)
+	return ok && f.NeedsAccess
+}
+
+// accessLostMessage is logged when a feed turns private mid-run.
+func accessLostMessage(p platform.Platform, kind string) string {
+	if f, ok := p.Feed(kind); ok && f.AccessHint != nil && f.AccessHint.Title != "" {
+		return f.AccessHint.Title + "; paused until access is back"
+	}
+	return p.DisplayName + " refused access to the " + kind + " feed; paused until access is back"
+}
+
 func (w *Worker) poll(ctx context.Context, wf *service.WorkFeed) error {
 	w.setStatus(StateRunning, "Polling "+wf.PlayerName)
 	k := wf.Key()
@@ -50,7 +64,7 @@ func (w *Worker) poll(ctx context.Context, wf *service.WorkFeed) error {
 		newReplays += res.NewReplays
 		refused += pg.Refused
 		urlChanged += res.URLChanged
-		if res.Known > 0 || len(pg.Plays) == 0 || page >= pg.TotalPages {
+		if res.Known > 0 || (len(pg.Plays) == 0 && pg.Skipped == 0) || page >= pg.TotalPages {
 			reachedEnd = true
 			break
 		}
@@ -131,7 +145,7 @@ func (w *Worker) backfill(ctx context.Context, wf *service.WorkFeed) error {
 	w.logPageNotes(ctx, p, wf, pg.Refused, res.URLChanged)
 	k := wf.Key()
 	total := pg.TotalPages
-	if len(pg.Plays) == 0 || page >= total {
+	if (len(pg.Plays) == 0 && pg.Skipped == 0) || page >= total {
 		if err := w.svc.SetFeedBackfill(ctx, k, model.BackfillDone, page+1, total); err != nil {
 			return err
 		}
@@ -150,6 +164,12 @@ func (w *Worker) clientError(ctx context.Context, p platform.Platform, wf *servi
 	switch {
 	case errors.Is(err, platform.ErrRateLimited):
 		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindRateLimit, "rate limited by "+p.DisplayName+"; waiting for the limit to reset"))
+		return nil
+	case errors.Is(err, platform.ErrUnauthorized) && needsAccess(p, wf.Feed):
+		if err := w.svc.MarkFeedPrivate(ctx, k); err != nil {
+			return err
+		}
+		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindPoll, accessLostMessage(p, wf.Feed)))
 		return nil
 	case errors.Is(err, platform.ErrNotFound):
 		msg := "player not found on " + p.DisplayName + "; tracking of this account disabled"

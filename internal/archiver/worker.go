@@ -4,6 +4,7 @@ package archiver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -143,6 +144,9 @@ func (w *Worker) Step(ctx context.Context) (did bool, err error) {
 	w.maybePrune(ctx)
 
 	feedBusy, replayBusy, _ := w.busy()
+	if did, err := w.nextProbe(ctx, feedBusy); did || err != nil {
+		return did, err
+	}
 	wf, err := w.svc.DueFeed(ctx, st.PollInterval, feedBusy)
 	if err != nil {
 		return false, err
@@ -163,6 +167,26 @@ func (w *Worker) Step(ctx context.Context) (did bool, err error) {
 		return did, err
 	}
 	return w.nextReplay(ctx, service.TierBackfillOther, replayBusy)
+}
+
+// nextProbe checks the access of one feed that needs it (spec §5.1, tier 1).
+func (w *Worker) nextProbe(ctx context.Context, busy service.Busy) (bool, error) {
+	wf, err := w.svc.DueProbe(ctx, busy)
+	if err != nil || wf == nil {
+		return false, err
+	}
+	w.setStatus(StateRunning, "Checking access · "+wf.PlayerName)
+	if _, err := w.svc.CheckFeedAccess(ctx, wf.Key()); err != nil {
+		if ctx.Err() != nil {
+			return true, ctx.Err()
+		}
+		msg := "access check failed: " + err.Error()
+		if errors.Is(err, platform.ErrRateLimited) {
+			msg = "rate limited during an access check; retrying when the limit resets"
+		}
+		w.svc.Log(ctx, feedEvent(wf, model.LevelWarn, model.KindPoll, msg))
+	}
+	return true, nil
 }
 
 // busy lists, per (platform, kind), the feeds and replay downloads whose
