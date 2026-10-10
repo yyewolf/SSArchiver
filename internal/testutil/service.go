@@ -113,7 +113,7 @@ func UpsertFake(t testing.TB, svc *service.Service, playerID string, plays ...pl
 // Row returns a player's row by its platform ID (any platform and kind).
 func Row(t testing.TB, svc *service.Service, playerID, externalID string) *model.Score {
 	t.Helper()
-	list, err := svc.ListScores(context.Background(), service.ScoreFilter{PlayerID: playerID, PerPage: 100})
+	list, err := svc.ListScores(context.Background(), service.ScoreFilter{PlayerID: playerID, PerPage: 100, Types: []string{service.TypeAll}})
 	if err != nil {
 		t.Fatal(err)
 	}

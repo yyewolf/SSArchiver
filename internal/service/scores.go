@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -19,6 +20,57 @@ const (
 	FilterArchived   = "archived"
 )
 
+// Play types of ScoreFilter.Types and the API's type parameter (spec §6.2).
+const (
+	TypeComplete = "complete" // scores, plus attempts that cleared the map
+	TypeAll      = "all"
+)
+
+// PlayTypes are the accepted play types, in display order.
+var PlayTypes = []string{TypeComplete, model.EndFail, model.EndQuit, model.EndRestart, model.EndPractice, TypeAll}
+
+var ErrInvalidFilter = errors.New("invalid filter")
+
+// ParseTypes reads a comma list of play types; "" is nil (complete).
+func ParseTypes(s string) ([]string, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	var out []string
+	for _, t := range strings.Split(s, ",") {
+		t = strings.TrimSpace(t)
+		if !slices.Contains(PlayTypes, t) {
+			return nil, fmt.Errorf("%w: unknown type %q", ErrInvalidFilter, t)
+		}
+		if !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// typeCond is the SQL condition of a type filter ("" for all).
+func typeCond(types []string) (string, []any) {
+	if len(types) == 0 {
+		types = []string{TypeComplete}
+	}
+	if slices.Contains(types, TypeAll) {
+		return "", nil
+	}
+	var parts []string
+	var args []any
+	for _, t := range types {
+		if t == TypeComplete {
+			parts = append(parts, "(s.kind = ? OR (s.kind = ? AND s.end_type = ?))")
+			args = append(args, model.KindScore, model.KindAttempt, model.EndClear)
+			continue
+		}
+		parts = append(parts, "(s.kind = ? AND s.end_type = ?)")
+		args = append(args, model.KindAttempt, t)
+	}
+	return "(" + strings.Join(parts, " OR ") + ")", args
+}
+
 type UpsertResult struct{ New, Known, NewReplays, URLChanged int }
 
 type ScoreFilter struct {
@@ -29,7 +81,8 @@ type ScoreFilter struct {
 	Platform   string // "" = every platform
 	MinScore   *int64 // inclusive bounds on modified_score
 	MaxScore   *int64
-	MapKey     string // one map (the merged page's "more plays")
+	MapKey     string   // one map (the merged page's "more plays")
+	Types      []string // play types; nil = complete (spec §6.2)
 	Page       int
 	PerPage    int
 }
@@ -82,6 +135,9 @@ func (f ScoreFilter) where() (string, []any) {
 	}
 	if f.MapKey != "" {
 		add("lb.map_key = ?", f.MapKey)
+	}
+	if cond, targs := typeCond(f.Types); cond != "" {
+		add(cond, targs...)
 	}
 	return strings.Join(conds, " AND "), args
 }

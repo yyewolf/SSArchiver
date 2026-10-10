@@ -57,6 +57,12 @@ func TestMapPlaysURL(t *testing.T) {
 	if got := PlayerScoresURL("p1", f, 2); got != "/p/p1?max_score=900000&min_score=5&page=2&platform=testplat" {
 		t.Errorf("PlayerScoresURL = %s", got)
 	}
+	if got := PlayerScoresURL("p1", service.ScoreFilter{Types: []string{"fail", "quit"}}, 1); got != "/p/p1?type=fail%2Cquit" {
+		t.Errorf("PlayerScoresURL(types) = %s", got)
+	}
+	if got := PlayerScoresURL("p1", service.ScoreFilter{Types: []string{service.TypeComplete}}, 1); got != "/p/p1" {
+		t.Errorf("the default type is not encoded: %s", got)
+	}
 }
 
 func TestViewerSrcHeadsetOverride(t *testing.T) {

@@ -300,3 +300,26 @@ func TestPublicReadsAreCrossOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestScoreTypeParam(t *testing.T) {
+	svc, h := newMultiAPI(t, false)
+	tess := testutil.AddPlayer(t, svc, "https://tp.example/u/abc")
+	fail := testutil.FakePlay(model.KindAttempt, "a1", "lb-a", testutil.T0, true)
+	fail.EndType, fail.EndTime = model.EndFail, new(61.5)
+	testutil.UpsertFake(t, svc, tess, testutil.FakePlay(model.KindScore, "s1", "lb-a", testutil.T0, true), fail)
+	for q, want := range map[string]float64{"": 1, "type=fail": 1, "type=all": 2, "type=complete,fail": 2} {
+		code, page, _ := call(t, h, http.MethodGet, "/api/v1/players/"+tess+"/scores?"+q, nil)
+		if code != 200 || page["total"].(float64) != want {
+			t.Errorf("%q = %d total %v, want %v", q, code, page["total"], want)
+		}
+	}
+	code, page, _ := call(t, h, http.MethodGet, "/api/v1/players/"+tess+"/scores?type=fail", nil)
+	a := page["items"].([]any)[0].(map[string]any)
+	if code != 200 || a["kind"] != "attempt" || a["end_type"] != "fail" || a["end_time"] == nil ||
+		a["url"] != "https://replays.example.com/s/tp/attempt/a1" {
+		t.Fatalf("attempt DTO = %v", a)
+	}
+	if code, _, _ := call(t, h, http.MethodGet, "/api/v1/players/"+tess+"/scores?type=bogus", nil); code != 422 {
+		t.Fatalf("bogus type = %d", code)
+	}
+}

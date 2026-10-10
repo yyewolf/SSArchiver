@@ -20,6 +20,7 @@ type ListScoresInput struct {
 	State    string `query:"state" enum:"replay,archived" doc:"replay: the platform offered a replay; archived: stored here"`
 	Ranked   bool   `query:"ranked" doc:"Only ranked maps"`
 	Platform string `query:"platform" maxLength:"32" doc:"all (default) or one platform name"`
+	Type     string `query:"type" pattern:"^(complete|fail|quit|restart|practice|all)(,(complete|fail|quit|restart|practice|all))*$" doc:"Comma list: complete (default: scores and cleared attempts), fail, quit, restart, practice, all"`
 	MinScore string `query:"min_score" pattern:"^[0-9]{1,12}$" doc:"Inclusive lower bound on the score"`
 	MaxScore string `query:"max_score" pattern:"^[0-9]{1,12}$" doc:"Inclusive upper bound on the score"`
 }
@@ -71,6 +72,11 @@ func (a *API) registerScores() {
 			PlayerID: id, Search: in.Search, RankedOnly: in.Ranked, State: in.State, Page: in.Page, PerPage: in.PerPage,
 			MinScore: bound(in.MinScore), MaxScore: bound(in.MaxScore),
 		}
+		types, err := service.ParseTypes(in.Type)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		f.Types = types
 		if in.Platform != "" && in.Platform != "all" {
 			if _, err := a.platformName(in.Platform); err != nil {
 				return nil, err

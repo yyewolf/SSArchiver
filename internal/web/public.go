@@ -67,6 +67,7 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	}
 	plats := h.accountPlatforms(sum)
 	v := views.PlayerView{Player: &sum.Player, Summary: sum, Groups: groups, Filter: f, Platforms: plats, Now: h.svc.Now()}
+	v.HasAttempts = hasAttempts(sum)
 	if isHTMX(r) && r.Header.Get("HX-Target") == "scores" {
 		render(w, r, http.StatusOK, views.ScoreTable(v))
 		return
@@ -126,6 +127,9 @@ func scoreFilter(q url.Values, playerID string, reg *platform.Registry) service.
 		}
 	}
 	f.MinScore, f.MaxScore = scoreBound(q.Get("min_score")), scoreBound(q.Get("max_score"))
+	if types, err := service.ParseTypes(q.Get("type")); err == nil {
+		f.Types = types
+	}
 	return f
 }
 
@@ -135,6 +139,16 @@ func scoreBound(s string) *int64 {
 		return nil
 	}
 	return &n
+}
+
+// hasAttempts reports whether a player has any stored attempt.
+func hasAttempts(sum service.PlayerSummary) bool {
+	for _, id := range sum.Identities {
+		if id.Counts[model.KindAttempt].Scores > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // accountPlatforms are the registry entries of the player's accounts, primary first.

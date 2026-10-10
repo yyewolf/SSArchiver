@@ -20,12 +20,13 @@ import (
 )
 
 type PlayerView struct {
-	Player    *model.Player
-	Summary   service.PlayerSummary
-	Groups    service.MapGroupList
-	Filter    service.ScoreFilter
-	Platforms []platform.Platform // the player's platforms, primary first
-	Now       time.Time
+	Player      *model.Player
+	Summary     service.PlayerSummary
+	Groups      service.MapGroupList
+	Filter      service.ScoreFilter
+	Platforms   []platform.Platform // the player's platforms, primary first
+	HasAttempts bool                // show the type select
+	Now         time.Time
 }
 
 // listing are the accounts whose score feed is still walking its history.
@@ -59,6 +60,30 @@ func morePlaysLabel(n int64) string {
 		return "1 more play"
 	}
 	return Number(n) + " more plays"
+}
+
+// typeLabel names a play type in the type select.
+func typeLabel(t string) string {
+	switch t {
+	case service.TypeComplete:
+		return "Completed"
+	case model.EndFail:
+		return "Fails"
+	case model.EndQuit:
+		return "Quits"
+	case model.EndRestart:
+		return "Restarts"
+	case model.EndPractice:
+		return "Practice"
+	}
+	return "Everything"
+}
+
+func typeSelected(f service.ScoreFilter, t string) bool {
+	if len(f.Types) == 0 {
+		return t == service.TypeComplete
+	}
+	return len(f.Types) == 1 && f.Types[0] == t
 }
 
 templ PlayerPage(p Page, v PlayerView) {
@@ -161,6 +186,15 @@ templ scoreFilters(v PlayerView) {
 				for _, pf := range v.Platforms {
 					@nativeselect.Option(nativeselect.OptionProps{Value: pf.Name, Selected: v.Filter.Platform == pf.Name}) {
 						{ pf.DisplayName }
+					}
+				}
+			}
+		}
+		if v.HasAttempts {
+			@nativeselect.NativeSelect(nativeselect.Props{Name: "type", Attributes: templ.Attributes{"aria-label": "Play type"}}) {
+				for _, t := range service.PlayTypes {
+					@nativeselect.Option(nativeselect.OptionProps{Value: t, Selected: typeSelected(v.Filter, t)}) {
+						{ typeLabel(t) }
 					}
 				}
 			}

@@ -225,6 +225,32 @@ func TestScorePageArchived(t *testing.T) {
 		`property="og:image" content="https://cdn.scoresaber.com/covers/x.png"`, "Ranked")
 }
 
+func TestPlayerPageTypeFilter(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	tess := e.seedTP() // t1 and t2 scores, attempt a1 (a clear) on t1's map
+	fail := testutil.FakePlay(model.KindAttempt, "a2", "lb-c", testutil.T0.Add(-time.Hour), true)
+	fail.EndType = model.EndFail
+	testutil.UpsertFake(t, e.svc, tess, fail)
+
+	page := e.do(http.MethodGet, "/p/"+tess, nil).Body.String()
+	contains(t, page, `name="type"`, "Completed", "Fails", "Everything")
+	if strings.Contains(page, "Song lb-c") {
+		t.Fatal("a map with only a failed attempt is hidden by default")
+	}
+	fails := e.do(http.MethodGet, "/p/"+tess+"?type=fail", nil, htmx("scores")).Body.String()
+	if !strings.Contains(fails, "Song lb-c") || strings.Contains(fails, "Song lb-b") {
+		t.Fatalf("type=fail:\n%s", fails)
+	}
+	if bogus := e.do(http.MethodGet, "/p/"+tess+"?type=bogus", nil, htmx("scores")).Body.String(); strings.Contains(bogus, "Song lb-c") {
+		t.Fatal("an invalid type falls back to the default")
+	}
+	alice := e.seed()
+	if strings.Contains(e.do(http.MethodGet, "/p/"+alice, nil).Body.String(), `name="type"`) {
+		t.Fatal("players without attempts get no type select")
+	}
+}
+
 func TestScorePageStates(t *testing.T) {
 	e := newEnv(t)
 	e.setup()

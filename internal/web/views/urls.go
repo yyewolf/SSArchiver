@@ -31,6 +31,9 @@ func scoreQuery(f service.ScoreFilter) url.Values {
 	if f.MaxScore != nil {
 		q.Set("max_score", strconv.FormatInt(*f.MaxScore, 10))
 	}
+	if len(f.Types) > 0 && (len(f.Types) != 1 || f.Types[0] != service.TypeComplete) {
+		q.Set("type", strings.Join(f.Types, ","))
+	}
 	return q
 }
 
