@@ -17,27 +17,33 @@ import (
 
 func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 	return &Query{
-		db:          db,
-		Leaderboard: newLeaderboard(db, opts...),
-		Player:      newPlayer(db, opts...),
-		Score:       newScore(db, opts...),
-		Session:     newSession(db, opts...),
-		Setting:     newSetting(db, opts...),
-		SyncEvent:   newSyncEvent(db, opts...),
-		User:        newUser(db, opts...),
+		db:             db,
+		Leaderboard:    newLeaderboard(db, opts...),
+		Player:         newPlayer(db, opts...),
+		PlayerAlias:    newPlayerAlias(db, opts...),
+		PlayerPlatform: newPlayerPlatform(db, opts...),
+		Score:          newScore(db, opts...),
+		Session:        newSession(db, opts...),
+		Setting:        newSetting(db, opts...),
+		SyncEvent:      newSyncEvent(db, opts...),
+		SyncFeed:       newSyncFeed(db, opts...),
+		User:           newUser(db, opts...),
 	}
 }
 
 type Query struct {
 	db *gorm.DB
 
-	Leaderboard leaderboard
-	Player      player
-	Score       score
-	Session     session
-	Setting     setting
-	SyncEvent   syncEvent
-	User        user
+	Leaderboard    leaderboard
+	Player         player
+	PlayerAlias    playerAlias
+	PlayerPlatform playerPlatform
+	Score          score
+	Session        session
+	Setting        setting
+	SyncEvent      syncEvent
+	SyncFeed       syncFeed
+	User           user
 }
 
 func (q *Query) Available() bool { return q.db != nil }
@@ -46,14 +52,17 @@ func (q *Query) UnderlyingDB() *gorm.DB { return q.db }
 
 func (q *Query) clone(db *gorm.DB) *Query {
 	return &Query{
-		db:          db,
-		Leaderboard: q.Leaderboard.clone(db),
-		Player:      q.Player.clone(db),
-		Score:       q.Score.clone(db),
-		Session:     q.Session.clone(db),
-		Setting:     q.Setting.clone(db),
-		SyncEvent:   q.SyncEvent.clone(db),
-		User:        q.User.clone(db),
+		db:             db,
+		Leaderboard:    q.Leaderboard.clone(db),
+		Player:         q.Player.clone(db),
+		PlayerAlias:    q.PlayerAlias.clone(db),
+		PlayerPlatform: q.PlayerPlatform.clone(db),
+		Score:          q.Score.clone(db),
+		Session:        q.Session.clone(db),
+		Setting:        q.Setting.clone(db),
+		SyncEvent:      q.SyncEvent.clone(db),
+		SyncFeed:       q.SyncFeed.clone(db),
+		User:           q.User.clone(db),
 	}
 }
 
@@ -67,36 +76,45 @@ func (q *Query) WriteDB() *Query {
 
 func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 	return &Query{
-		db:          db,
-		Leaderboard: q.Leaderboard.replaceDB(db),
-		Player:      q.Player.replaceDB(db),
-		Score:       q.Score.replaceDB(db),
-		Session:     q.Session.replaceDB(db),
-		Setting:     q.Setting.replaceDB(db),
-		SyncEvent:   q.SyncEvent.replaceDB(db),
-		User:        q.User.replaceDB(db),
+		db:             db,
+		Leaderboard:    q.Leaderboard.replaceDB(db),
+		Player:         q.Player.replaceDB(db),
+		PlayerAlias:    q.PlayerAlias.replaceDB(db),
+		PlayerPlatform: q.PlayerPlatform.replaceDB(db),
+		Score:          q.Score.replaceDB(db),
+		Session:        q.Session.replaceDB(db),
+		Setting:        q.Setting.replaceDB(db),
+		SyncEvent:      q.SyncEvent.replaceDB(db),
+		SyncFeed:       q.SyncFeed.replaceDB(db),
+		User:           q.User.replaceDB(db),
 	}
 }
 
 type queryCtx struct {
-	Leaderboard ILeaderboardDo
-	Player      IPlayerDo
-	Score       IScoreDo
-	Session     ISessionDo
-	Setting     ISettingDo
-	SyncEvent   ISyncEventDo
-	User        IUserDo
+	Leaderboard    ILeaderboardDo
+	Player         IPlayerDo
+	PlayerAlias    IPlayerAliasDo
+	PlayerPlatform IPlayerPlatformDo
+	Score          IScoreDo
+	Session        ISessionDo
+	Setting        ISettingDo
+	SyncEvent      ISyncEventDo
+	SyncFeed       ISyncFeedDo
+	User           IUserDo
 }
 
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
-		Leaderboard: q.Leaderboard.WithContext(ctx),
-		Player:      q.Player.WithContext(ctx),
-		Score:       q.Score.WithContext(ctx),
-		Session:     q.Session.WithContext(ctx),
-		Setting:     q.Setting.WithContext(ctx),
-		SyncEvent:   q.SyncEvent.WithContext(ctx),
-		User:        q.User.WithContext(ctx),
+		Leaderboard:    q.Leaderboard.WithContext(ctx),
+		Player:         q.Player.WithContext(ctx),
+		PlayerAlias:    q.PlayerAlias.WithContext(ctx),
+		PlayerPlatform: q.PlayerPlatform.WithContext(ctx),
+		Score:          q.Score.WithContext(ctx),
+		Session:        q.Session.WithContext(ctx),
+		Setting:        q.Setting.WithContext(ctx),
+		SyncEvent:      q.SyncEvent.WithContext(ctx),
+		SyncFeed:       q.SyncFeed.WithContext(ctx),
+		User:           q.User.WithContext(ctx),
 	}
 }
 

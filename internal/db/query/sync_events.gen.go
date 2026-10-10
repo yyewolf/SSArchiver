@@ -33,6 +33,8 @@ func newSyncEvent(db *gorm.DB, opts ...gen.DOOption) syncEvent {
 	_syncEvent.Kind = field.NewString(tableName, "kind")
 	_syncEvent.PlayerID = field.NewString(tableName, "player_id")
 	_syncEvent.ScoreID = field.NewInt64(tableName, "score_id")
+	_syncEvent.Platform = field.NewString(tableName, "platform")
+	_syncEvent.Feed = field.NewString(tableName, "feed")
 	_syncEvent.Message = field.NewString(tableName, "message")
 
 	_syncEvent.fillFieldMap()
@@ -50,6 +52,8 @@ type syncEvent struct {
 	Kind     field.String
 	PlayerID field.String
 	ScoreID  field.Int64
+	Platform field.String
+	Feed     field.String
 	Message  field.String
 
 	fieldMap map[string]field.Expr
@@ -73,6 +77,8 @@ func (s *syncEvent) updateTableName(table string) *syncEvent {
 	s.Kind = field.NewString(table, "kind")
 	s.PlayerID = field.NewString(table, "player_id")
 	s.ScoreID = field.NewInt64(table, "score_id")
+	s.Platform = field.NewString(table, "platform")
+	s.Feed = field.NewString(table, "feed")
 	s.Message = field.NewString(table, "message")
 
 	s.fillFieldMap()
@@ -100,13 +106,15 @@ func (s *syncEvent) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (s *syncEvent) fillFieldMap() {
-	s.fieldMap = make(map[string]field.Expr, 7)
+	s.fieldMap = make(map[string]field.Expr, 9)
 	s.fieldMap["id"] = s.ID
 	s.fieldMap["at"] = s.At
 	s.fieldMap["level"] = s.Level
 	s.fieldMap["kind"] = s.Kind
 	s.fieldMap["player_id"] = s.PlayerID
 	s.fieldMap["score_id"] = s.ScoreID
+	s.fieldMap["platform"] = s.Platform
+	s.fieldMap["feed"] = s.Feed
 	s.fieldMap["message"] = s.Message
 }
 

@@ -131,3 +131,21 @@ func TestListScoresFiltersAndPaging(t *testing.T) {
 		t.Fatalf("a bare %% must not act as a wildcard filter that drops rows: total = %d", wild.Total)
 	}
 }
+
+func TestUpsertSetsPlatformColumns(t *testing.T) {
+	svc, _, clk := testutil.NewService(t)
+	ctx := context.Background()
+	mustAdd(t, svc, "1001")
+	upsert(t, svc, "1001", clk, []scoreItem{{id: 7, hasReplay: true}})
+	sc, err := svc.GetScore(ctx, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.Platform != model.PlatformScoreSaber || sc.Kind != model.KindScore || sc.EndType != model.EndClear || sc.ExternalID != "7" || sc.ReplayURL != nil {
+		t.Fatalf("score = %+v", sc)
+	}
+	lb := sc.Leaderboard
+	if lb.Platform != model.PlatformScoreSaber || lb.ExternalID != "1007" || lb.MapKey != "hash1007/Standard/9" {
+		t.Fatalf("leaderboard = %+v", lb)
+	}
+}

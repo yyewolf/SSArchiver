@@ -40,6 +40,9 @@ func newLeaderboard(db *gorm.DB, opts ...gen.DOOption) leaderboard {
 	_leaderboard.Status = field.NewString(tableName, "status")
 	_leaderboard.Stars = field.NewFloat64(tableName, "stars")
 	_leaderboard.MaxScore = field.NewInt64(tableName, "max_score")
+	_leaderboard.Platform = field.NewString(tableName, "platform")
+	_leaderboard.ExternalID = field.NewString(tableName, "external_id")
+	_leaderboard.MapKey = field.NewString(tableName, "map_key")
 
 	_leaderboard.fillFieldMap()
 
@@ -63,6 +66,9 @@ type leaderboard struct {
 	Status        field.String
 	Stars         field.Float64
 	MaxScore      field.Int64
+	Platform      field.String
+	ExternalID    field.String
+	MapKey        field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -92,6 +98,9 @@ func (l *leaderboard) updateTableName(table string) *leaderboard {
 	l.Status = field.NewString(table, "status")
 	l.Stars = field.NewFloat64(table, "stars")
 	l.MaxScore = field.NewInt64(table, "max_score")
+	l.Platform = field.NewString(table, "platform")
+	l.ExternalID = field.NewString(table, "external_id")
+	l.MapKey = field.NewString(table, "map_key")
 
 	l.fillFieldMap()
 
@@ -118,7 +127,7 @@ func (l *leaderboard) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (l *leaderboard) fillFieldMap() {
-	l.fieldMap = make(map[string]field.Expr, 13)
+	l.fieldMap = make(map[string]field.Expr, 16)
 	l.fieldMap["id"] = l.ID
 	l.fieldMap["song_hash"] = l.SongHash
 	l.fieldMap["song_name"] = l.SongName
@@ -132,6 +141,9 @@ func (l *leaderboard) fillFieldMap() {
 	l.fieldMap["status"] = l.Status
 	l.fieldMap["stars"] = l.Stars
 	l.fieldMap["max_score"] = l.MaxScore
+	l.fieldMap["platform"] = l.Platform
+	l.fieldMap["external_id"] = l.ExternalID
+	l.fieldMap["map_key"] = l.MapKey
 }
 
 func (l leaderboard) clone(db *gorm.DB) leaderboard {

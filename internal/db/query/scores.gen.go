@@ -51,6 +51,12 @@ func newScore(db *gorm.DB, opts ...gen.DOOption) score {
 	_score.Attempts = field.NewInt(tableName, "attempts")
 	_score.NextAttemptAt = field.NewTime(tableName, "next_attempt_at")
 	_score.LastError = field.NewString(tableName, "last_error")
+	_score.Platform = field.NewString(tableName, "platform")
+	_score.Kind = field.NewString(tableName, "kind")
+	_score.EndType = field.NewString(tableName, "end_type")
+	_score.EndTime = field.NewFloat64(tableName, "end_time")
+	_score.ExternalID = field.NewString(tableName, "external_id")
+	_score.ReplayURL = field.NewString(tableName, "replay_url")
 	_score.Player = scoreBelongsToPlayer{
 		db: db.Session(&gorm.Session{}),
 
@@ -96,6 +102,12 @@ type score struct {
 	Attempts        field.Int
 	NextAttemptAt   field.Time
 	LastError       field.String
+	Platform        field.String
+	Kind            field.String
+	EndType         field.String
+	EndTime         field.Float64
+	ExternalID      field.String
+	ReplayURL       field.String
 	Player          scoreBelongsToPlayer
 
 	Leaderboard scoreBelongsToLeaderboard
@@ -139,6 +151,12 @@ func (s *score) updateTableName(table string) *score {
 	s.Attempts = field.NewInt(table, "attempts")
 	s.NextAttemptAt = field.NewTime(table, "next_attempt_at")
 	s.LastError = field.NewString(table, "last_error")
+	s.Platform = field.NewString(table, "platform")
+	s.Kind = field.NewString(table, "kind")
+	s.EndType = field.NewString(table, "end_type")
+	s.EndTime = field.NewFloat64(table, "end_time")
+	s.ExternalID = field.NewString(table, "external_id")
+	s.ReplayURL = field.NewString(table, "replay_url")
 
 	s.fillFieldMap()
 
@@ -163,7 +181,7 @@ func (s *score) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (s *score) fillFieldMap() {
-	s.fieldMap = make(map[string]field.Expr, 26)
+	s.fieldMap = make(map[string]field.Expr, 32)
 	s.fieldMap["id"] = s.ID
 	s.fieldMap["player_id"] = s.PlayerID
 	s.fieldMap["leaderboard_id"] = s.LeaderboardID
@@ -188,6 +206,12 @@ func (s *score) fillFieldMap() {
 	s.fieldMap["attempts"] = s.Attempts
 	s.fieldMap["next_attempt_at"] = s.NextAttemptAt
 	s.fieldMap["last_error"] = s.LastError
+	s.fieldMap["platform"] = s.Platform
+	s.fieldMap["kind"] = s.Kind
+	s.fieldMap["end_type"] = s.EndType
+	s.fieldMap["end_time"] = s.EndTime
+	s.fieldMap["external_id"] = s.ExternalID
+	s.fieldMap["replay_url"] = s.ReplayURL
 
 }
 

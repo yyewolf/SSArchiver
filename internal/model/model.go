@@ -75,6 +75,44 @@ type Player struct {
 	BackfillRetryAt    *time.Time
 }
 
+// PlayerPlatform is one linked platform account of a player (spec §4.3).
+type PlayerPlatform struct {
+	PlayerID   string    `gorm:"primaryKey"`
+	Player     *Player   `gorm:"constraint:OnDelete:CASCADE"`
+	Platform   string    `gorm:"primaryKey"`
+	ExternalID string    `gorm:"not null"` // unique with Platform: index created by db.Migrate
+	Enabled    bool      `gorm:"not null"`
+	LinkedAt   time.Time `gorm:"not null"`
+	LastError  string    `gorm:"not null"`
+}
+
+// SyncFeed is the sync cursor of one feed of one platform account (spec
+// §4.3). Its table is created by db.Migrate with raw DDL because of the
+// composite foreign key to player_platforms: declare no relation here.
+type SyncFeed struct {
+	PlayerID           string    `gorm:"primaryKey"`
+	Platform           string    `gorm:"primaryKey"`
+	Feed               string    `gorm:"primaryKey"` // the row kind it produces: KindScore | KindAttempt
+	Enabled            bool      `gorm:"not null"`
+	StartedAt          time.Time `gorm:"not null"` // plays set at or after it are "new"
+	Access             string    `gorm:"not null"` // Access*
+	AccessCheckedAt    *time.Time
+	RemoteTotal        int64  `gorm:"not null"`
+	BackfillState      string `gorm:"not null"`
+	BackfillPage       int    `gorm:"not null"` // next page to fetch, 1-based
+	BackfillTotalPages int    `gorm:"not null"`
+	BackfillRetryAt    *time.Time
+	LastPolledAt       *time.Time
+	LastError          string `gorm:"not null"`
+}
+
+// PlayerAlias maps a merged-away player ID to the surviving player (spec §4.2).
+type PlayerAlias struct {
+	OldID    string  `gorm:"primaryKey"`
+	PlayerID string  `gorm:"not null;index"`
+	Player   *Player `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 type Leaderboard struct {
 	ID            int64   `gorm:"primaryKey;autoIncrement:false"`
 	SongHash      string  `gorm:"not null;index"`
@@ -89,6 +127,10 @@ type Leaderboard struct {
 	Status        string  `gorm:"not null"` // RANKED, QUALIFIED, LOVED, UNRANKED
 	Stars         float64 `gorm:"not null"`
 	MaxScore      int64   `gorm:"not null"`
+
+	Platform   string `gorm:"not null;default:''"` // unique with ExternalID: index created by db.Migrate
+	ExternalID string `gorm:"not null;default:''"` // the platform's leaderboard ID
+	MapKey     string `gorm:"not null;default:''"` // platform.MapKey; index created by db.Migrate
 }
 
 type Score struct {
@@ -118,6 +160,13 @@ type Score struct {
 	Attempts        int `gorm:"not null"`
 	NextAttemptAt   *time.Time
 	LastError       string `gorm:"not null"`
+
+	Platform   string `gorm:"not null;default:''"` // unique with Kind+ExternalID: index created by db.Migrate
+	Kind       string `gorm:"not null;default:''"` // KindScore | KindAttempt
+	EndType    string `gorm:"not null;default:''"` // End*
+	EndTime    *float64
+	ExternalID string `gorm:"not null;default:''"` // the platform's score/attempt ID
+	ReplayURL  *string
 }
 
 type User struct {
@@ -147,10 +196,16 @@ type SyncEvent struct {
 	Kind     string    `gorm:"not null;index"`
 	PlayerID *string   `gorm:"index"`
 	ScoreID  *int64
+	Platform *string
+	Feed     *string
 	Message  string `gorm:"not null"`
 }
 
-// All returns every model, in migration order.
+// All returns every model, in migration order. db.Migrate creates sync_feeds
+// by hand before AutoMigrate sees SyncFeed.
 func All() []any {
-	return []any{&Player{}, &Leaderboard{}, &Score{}, &User{}, &Session{}, &Setting{}, &SyncEvent{}}
+	return []any{
+		&Player{}, &PlayerPlatform{}, &SyncFeed{}, &PlayerAlias{}, &Leaderboard{}, &Score{},
+		&User{}, &Session{}, &Setting{}, &SyncEvent{},
+	}
 }

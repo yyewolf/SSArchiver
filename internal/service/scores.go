@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm/clause"
 
 	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/model"
+	"github.com/yyewolf/ssarchiver/internal/platform"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 )
 
@@ -42,6 +44,8 @@ func leaderboardFrom(lb scoresaber.Leaderboard) *model.Leaderboard {
 		SongAuthor: lb.Map.SongAuthorName, Mapper: lb.Map.LevelAuthorName,
 		Difficulty: lb.Difficulty.Difficulty, DifficultyRaw: lb.Difficulty.RawDifficulty, GameMode: lb.Difficulty.GameMode,
 		CoverURL: lb.Map.CoverURL, Status: lb.Realm.LeaderboardStatus, Stars: lb.Realm.Stars, MaxScore: lb.MaxScore,
+		Platform: model.PlatformScoreSaber, ExternalID: strconv.FormatInt(lb.ID, 10),
+		MapKey: platform.MapKey(lb.Map.Hash, lb.Difficulty.GameMode, lb.Difficulty.Difficulty),
 	}
 }
 
@@ -57,6 +61,7 @@ func scoreFrom(playerID string, it scoresaber.ScoreItem) *model.Score {
 		Mods: strings.Join(sc.Mods, ","), FullCombo: sc.FullCombo, MissedNotes: sc.MissedNotes, BadCuts: sc.BadCuts,
 		MaxCombo: sc.MaxCombo, HMD: sc.Device.HMD, PersonalBest: sc.PersonalBest, SetAt: sc.CreatedAt.UTC(),
 		HasReplay: sc.HasReplay, ReplayState: state,
+		Platform: model.PlatformScoreSaber, Kind: model.KindScore, EndType: model.EndClear, ExternalID: strconv.FormatInt(sc.ID, 10),
 	}
 }
 

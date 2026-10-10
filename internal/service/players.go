@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yyewolf/ssarchiver/internal/db"
+	"github.com/yyewolf/ssarchiver/internal/db/query"
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/scoresaber"
 	"github.com/yyewolf/ssarchiver/internal/storage"
@@ -56,11 +57,23 @@ func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, e
 	if err != nil {
 		return nil, err
 	}
+	now := s.Now()
 	p := &model.Player{
 		ID: sp.ID, Name: sp.Name, AvatarURL: sp.Avatar, Country: sp.Country,
-		Enabled: true, AddedAt: s.Now(), BackfillState: model.BackfillPending, BackfillPage: 1,
+		Enabled: true, AddedAt: now, BackfillState: model.BackfillPending, BackfillPage: 1,
 	}
-	if err := s.q.Player.WithContext(ctx).Create(p); err != nil {
+	err = s.q.Transaction(func(tx *query.Query) error {
+		if err := tx.Player.WithContext(ctx).Create(p); err != nil {
+			return err
+		}
+		if err := tx.PlayerPlatform.WithContext(ctx).Create(&model.PlayerPlatform{
+			PlayerID: p.ID, Platform: model.PlatformScoreSaber, ExternalID: sp.ID, Enabled: true, LinkedAt: now,
+		}); err != nil {
+			return err
+		}
+		return tx.SyncFeed.WithContext(ctx).Create(newFeed(p.ID, model.PlatformScoreSaber, model.KindScore, now, model.AccessNA))
+	})
+	if err != nil {
 		if db.IsDuplicate(err) {
 			return nil, ErrPlayerExists
 		}
@@ -69,6 +82,26 @@ func (s *Service) AddPlayer(ctx context.Context, input string) (*model.Player, e
 	s.Log(ctx, model.SyncEvent{Level: model.LevelInfo, Kind: model.KindWorker, PlayerID: Ptr(p.ID), Message: "player added: " + p.Name})
 	s.Wake()
 	return p, nil
+}
+
+// Identities lists a player's linked platform accounts.
+func (s *Service) Identities(ctx context.Context, playerID string) ([]*model.PlayerPlatform, error) {
+	pp := s.q.PlayerPlatform
+	out, err := pp.WithContext(ctx).Where(pp.PlayerID.Eq(playerID)).Order(pp.Platform).Find()
+	if err != nil {
+		return nil, fmt.Errorf("service: identities: %w", err)
+	}
+	return out, nil
+}
+
+// Feeds lists a player's sync feeds.
+func (s *Service) Feeds(ctx context.Context, playerID string) ([]*model.SyncFeed, error) {
+	f := s.q.SyncFeed
+	out, err := f.WithContext(ctx).Where(f.PlayerID.Eq(playerID)).Order(f.Platform, f.Feed).Find()
+	if err != nil {
+		return nil, fmt.Errorf("service: feeds: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Service) GetPlayer(ctx context.Context, id string) (*model.Player, error) {

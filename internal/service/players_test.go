@@ -133,3 +133,28 @@ func TestRequestPollWakesAndClearsLastPolled(t *testing.T) {
 		t.Fatal("RequestPoll must wake the worker")
 	}
 }
+
+func TestAddPlayerCreatesAccountAndScoreFeed(t *testing.T) {
+	svc, _, _ := testutil.NewService(t)
+	ctx := context.Background()
+	p, err := svc.AddPlayer(ctx, "1001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := svc.Identities(ctx, p.ID)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("identities = %v %v", ids, err)
+	}
+	if ids[0].Platform != model.PlatformScoreSaber || ids[0].ExternalID != "1001" || !ids[0].Enabled || !ids[0].LinkedAt.Equal(testutil.T0) {
+		t.Fatalf("identity = %+v", ids[0])
+	}
+	feeds, err := svc.Feeds(ctx, p.ID)
+	if err != nil || len(feeds) != 1 {
+		t.Fatalf("feeds = %v %v", feeds, err)
+	}
+	f := feeds[0]
+	if f.Feed != model.KindScore || !f.Enabled || f.Access != model.AccessNA || f.BackfillState != model.BackfillPending ||
+		f.BackfillPage != 1 || f.LastPolledAt != nil || !f.StartedAt.Equal(testutil.T0) {
+		t.Fatalf("feed = %+v", f)
+	}
+}
