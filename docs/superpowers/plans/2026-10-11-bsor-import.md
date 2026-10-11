@@ -85,7 +85,7 @@ Tests (table where natural):
 - `TestParseHeaderDecodesAllFields`: parse `fixture(..., ts: 1791712056, playerID: "76561198038925092", hash: "57511EE48555E00E031BD3B1DF90BA7BE5712B56", songName: "Night Raid with a Dragon", mapper: "nolan121405", difficulty: "ExpertPlus", mode: "Standard", score: 426137, failTime: 67.91858)` followed by a frames stub (`[]byte{1}` + int32(1) + 36 zero bytes — parser must stop after info and not need them). Assert every Header field equals the input (Hash keeps its uppercase).
 - `TestParseHeaderRejectsGarbage`: wrong magic (`0x11223344`), wrong version byte (`2`), info section type ≠ 0 as the first section, truncated in the middle of a string, and a string length > 1024 → each returns an error.
 - `TestFilenameEndType`: `"76561198038925092-fail-X-ExpertPlus-Standard-H1-1791712056.bsor"` → `("fail", true)`; same with `quit`, `restart`, `practice`; `"76561198038925092-X-ExpertPlus-Standard-H1-1.bsor"` → `("", false)`; `"Yewolf-fail-x.bsor"` (no leading digits) → `("", false)`; `"76561198038925092-quit-fail-x.bsor"` → `("quit", true)`.
-- `TestRealSamples` (env-gated): skipped unless `os.Getenv("SSA_BSOR_SAMPLES")` names a directory; for each `*.bsor` in it: `ParseHeader` succeeds, `PlayerID`/`Hash` non-empty, `Timestamp > 1_500_000_000`; when the base filename ends in `-{digits}.bsor`, that number equals `Timestamp`; when the base name contains `-fail-`, `FailTime > 0`. (Verified against the 12 real samples in `.worktrees/samples` — do not commit them.)
+- `TestRealSamples` (env-gated): skipped unless `os.Getenv("SSA_BSOR_SAMPLES")` names a directory; for each `*.bsor` in it: `ParseHeader` succeeds, `PlayerID`/`Hash` non-empty, `Timestamp > 1_500_000_000`; when the base filename ends in `-{digits}.bsor`, that number equals `Timestamp`; when the base name contains `-fail-`, `FailTime > 0`. (Verified against 11 real samples in `.worktrees/samples` — do not commit them.)
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -99,7 +99,7 @@ Read with a `bufio.Reader`: int32 LE via 4 bytes + `encoding/binary`; floats via
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `go test ./internal/bsor/ -v`
-Expected: PASS (including `TestRealSamples` when `SSA_BSOR_SAMPLES=.worktrees/samples` is set — run that once manually and confirm 12 files parse).
+Expected: PASS (including `TestRealSamples` when `SSA_BSOR_SAMPLES=.worktrees/samples` is set — run that once manually and confirm 11 files parse).
 
 - [ ] **Step 5: Commit**
 
@@ -279,7 +279,7 @@ git commit -m "feat(web): import local .bsor replays from Manage"
 
 ### Task 4: Manual verification pass (no code)
 
-- [ ] Run the server locally: `make run`; sign in; on **Manage** import the 12 files from `.worktrees/samples`.
+- [ ] Run the server locally: `make run`; sign in; on **Manage** import the 11 files from `.worktrees/samples`.
 - [ ] Expected: 6 clears and 4 fails import onto their rows (or report `already archived` where the row already has a replay — both are correct per spec §5); `Be There For You` reports `map not in the archive`.
 - [ ] Open one imported replay's page: the raw download works and the embed plays it in the BeatLeader hosted viewer.
 - [ ] Re-import the same batch: every file reports `already archived` / `download in progress`, and no replay file changed on disk (row `ReplaySHA256` stable).

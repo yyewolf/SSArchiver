@@ -26,7 +26,7 @@ Success criteria:
   worker; the serving surface (pages, raw files, embeds) treats an imported
   replay like any other archived replay.
 
-## 2. External facts (verified 2026-10-11, against 12 real local files and the live API)
+## 2. External facts (verified 2026-10-11, against 11 real local files and the live API)
 
 ### 2.1 Local replay format = BSOR v1 (BeatLeader's native format)
 
@@ -35,7 +35,7 @@ Success criteria:
   `0=info, 1=frames, 2=notes, 3=walls, 4=heights, 5=pauses, 6=saberOffsets,
   7=customData`. Layout matches ArcViewer's `BsorDecoderV1.cs`
   (github.com/AllPoland/ArcViewer, `Assets/__Scripts/Loading/Replays/BeatLeader/Legacy`).
-- `info` (verified field by field on all 12 files), little-endian, strings are
+- `info` (verified field by field on all 11 files), little-endian, strings are
   `[int32 length][utf8 bytes]`:
   `version, gameVersion, timestamp, playerID, playerName, platform,
   trackingSystem, hmd, controller, hash, songName, mapper, difficulty` (13
