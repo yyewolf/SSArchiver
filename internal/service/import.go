@@ -28,7 +28,7 @@ const (
 type ImportResult struct {
 	File     string
 	Status   string // ImportStatus*
-	Reason   string // empty unless skipped
+	Reason   string // skip reason; "already archived" on Status already; empty when imported
 	PlayerID string // owning player's ID when the file routed to one
 	ScoreID  int64  // the row the file landed on
 	Map      string // "SongName [Difficulty]" for imported files
@@ -60,6 +60,9 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return skip(res, "no tracked player for "+h.PlayerID), nil
 		}
+		if fatal(err) {
+			return res, err
+		}
 		return skip(res, err.Error()), nil
 	}
 	res.PlayerID = acct.PlayerID
@@ -68,6 +71,9 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 		lb.GameMode.Eq(h.Mode), lb.DifficultyRaw.Eq(h.Difficulty), lb.Platform.Eq(model.PlatformBeatLeader),
 	).Find()
 	if err != nil {
+		if fatal(err) {
+			return res, err
+		}
 		return skip(res, err.Error()), nil
 	}
 	if len(lbs) == 0 {
@@ -80,6 +86,9 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 	rows, err := q.WithContext(ctx).Preload(q.Leaderboard).
 		Where(q.PlayerID.Eq(acct.PlayerID), q.LeaderboardID.In(ids...)).Find()
 	if err != nil {
+		if fatal(err) {
+			return res, err
+		}
 		return skip(res, err.Error()), nil
 	}
 	var archived []*model.Score
@@ -125,16 +134,20 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 	// original stream (b's own leftover buffer is a subset of head).
 	size, sum, err := s.PutReplay(row, io.MultiReader(&head, r))
 	if err != nil {
+		if fatal(err) {
+			return res, err
+		}
 		return skip(res, err.Error()), nil
 	}
 	ok, err := s.markReplayImported(ctx, row, size, sum)
 	if err != nil {
+		if fatal(err) {
+			return res, err
+		}
 		return skip(res, err.Error()), nil
 	}
 	if !ok {
-		if loc, lerr := s.replayLoc(row); lerr == nil {
-			_ = s.store.Remove(loc)
-		}
+		s.removeUnreferencedImport(ctx, row)
 		res.Status, res.Reason = ImportStatusAlready, "already archived"
 		return res, nil
 	}
@@ -211,6 +224,27 @@ func (s *Service) markReplayImported(ctx context.Context, sc *model.Score, size 
 		return false, fmt.Errorf("service: mark replay imported: %w", err)
 	}
 	return info.RowsAffected > 0, nil
+}
+
+// removeUnreferencedImport is the import's guard-race cleanup (spec §5
+// step 6): when the guarded mark loses the race, the file just stored at the
+// row's path is removed only while the fresh row does not reference it; an
+// archived row owns whatever sits at its path, and a gone row has no file
+// left to remove.
+func (s *Service) removeUnreferencedImport(ctx context.Context, sc *model.Score) {
+	fresh, err := s.q.Score.WithContext(ctx).Where(s.q.Score.ID.Eq(sc.ID)).First()
+	if err != nil || fresh.ReplayState == model.ReplayArchived {
+		return
+	}
+	if loc, lerr := s.replayLoc(sc); lerr == nil {
+		_ = s.store.Remove(loc)
+	}
+}
+
+// fatal reports whether err is a context failure: the one fatal condition
+// ImportReplay returns instead of a skipped result (spec §5).
+func fatal(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // skip fills res's skipped status (spec §5).

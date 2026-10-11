@@ -108,6 +108,13 @@ func TestParseHeaderRejectsGarbage(t *testing.T) {
 	oversizeString := bytes.Clone(valid)
 	binary.LittleEndian.PutUint32(oversizeString[6:], 2000) // the first string's length prefix
 
+	invalidUTF8 := fixture(t, 1791712056, "76561198038925092",
+		"57511EE48555E00E031BD3B1DF90BA7BE5712B56", "\xff\xfe",
+		"nolan121405", "ExpertPlus", "Standard", 426137, 67.91858) // songName is not UTF-8
+
+	hugeLength := bytes.Clone(valid)
+	binary.LittleEndian.PutUint32(hugeLength[6:], 0xFFFFFFFF) // huge as uint32, negative as int32
+
 	for _, tc := range []struct {
 		name string
 		data []byte
@@ -117,10 +124,34 @@ func TestParseHeaderRejectsGarbage(t *testing.T) {
 		{"first section is not info", sectionNotInfo},
 		{"truncated in the middle of a string", valid[:13]}, // inside "0.10.0"
 		{"string length over 1024", oversizeString},
+		{"string is not valid UTF-8", invalidUTF8},
+		{"string length 0xFFFFFFFF", hugeLength},
 	} {
 		if _, err := bsor.ParseHeader(bytes.NewReader(tc.data)); err == nil {
 			t.Errorf("%s: ParseHeader must fail", tc.name)
 		}
+	}
+}
+
+// TestParseHeaderStringBoundary pins the string length guard's inclusive
+// bound: maxStringLen bytes parse, one more is garbage.
+func TestParseHeaderStringBoundary(t *testing.T) {
+	atLimit := fixture(t, 1791712056, "76561198038925092",
+		"57511EE48555E00E031BD3B1DF90BA7BE5712B56", strings.Repeat("a", 1024),
+		"nolan121405", "ExpertPlus", "Standard", 426137, 67.91858)
+	h, err := bsor.ParseHeader(bytes.NewReader(atLimit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.SongName != strings.Repeat("a", 1024) {
+		t.Fatalf("1024-byte string did not round-trip: %d bytes", len(h.SongName))
+	}
+
+	overLimit := fixture(t, 1791712056, "76561198038925092",
+		"57511EE48555E00E031BD3B1DF90BA7BE5712B56", strings.Repeat("a", 1025),
+		"nolan121405", "ExpertPlus", "Standard", 426137, 67.91858)
+	if _, err := bsor.ParseHeader(bytes.NewReader(overLimit)); err == nil {
+		t.Fatal("a 1025-byte string must fail")
 	}
 }
 

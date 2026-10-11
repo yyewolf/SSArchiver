@@ -170,8 +170,10 @@ becomes a `skipped` result with a specific reason:
    `UPDATE scores SET replay_state = 'archived', replay_size, replay_sha256,
    archived_at, next_attempt_at = NULL, last_error = '' WHERE id = ? AND
    replay_state IN ('none','gone','failed')`. `RowsAffected = 0` means the
-   worker archived the row meanwhile: `Remove` the just-stored file and report
-   *"already archived"*. Success → result `imported` with the row's page URL
+   row left the replay-less states meanwhile: re-read it and remove the stored
+   file only when the row does not reference it (an archived row owns its
+   path), then report *"already archived"*. Success → result `imported` with
+   the row's page URL
    (`/s/bl/{externalID}` or `/s/bl/attempt/{externalID}` via the registry).
 - Files are processed one at a time by the caller; a failure in one file never
   affects another. No `sync_events` are written; the results panel is the
@@ -193,7 +195,9 @@ becomes a `skipped` result with a specific reason:
   `ParseMultipartForm`, whose >10 MiB parts would spool to `/tmp` (absent or
   read-only in the scratch image). Parts are streamed into `ImportReplay`.
 - Caps (enforced while streaming): 256 MiB per file, 4 GiB per request;
-  a part over its cap is drained and skipped *"file too large"*.
+  a part over its cap is drained and skipped *"file too large"*, and once the
+  cumulative total reaches the request cap, later parts are skipped
+  *"request size limit reached"* without calling the service.
 - UI (Manage page, new card between "Add a player" and the table):
   title "Import replays", description explaining auto-routing and gap-fill,
   `<input type="file" multiple accept=".bsor">`, submit button

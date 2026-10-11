@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -49,6 +51,21 @@ func importFile(t *testing.T, svc *service.Service, name string, body []byte) se
 }
 
 func ptr(f float64) *float64 { return &f }
+
+// replayFileExists reports whether a row's replay file is on disk.
+func replayFileExists(t *testing.T, svc *service.Service, sc *model.Score) bool {
+	t.Helper()
+	path, err := svc.ReplayPath(sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return false
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return true
+}
 
 // replayFile reads a row's stored replay file.
 func replayFile(t *testing.T, svc *service.Service, sc *model.Score) []byte {
@@ -248,7 +265,8 @@ func TestImportAlreadyArchivedWithDecoy(t *testing.T) {
 
 	name := "76561198038925092-fail-X-Expert-Standard-HASH-LB1-1000.bsor"
 	body := bsorFixture("abc", "HASH-LB1", 426137, 67.91858)
-	if res := importFile(t, svc, name, body); res.Status != service.ImportStatusImported {
+	a1 := testutil.Row(t, svc, player, "a1")
+	if res := importFile(t, svc, name, body); res.Status != service.ImportStatusImported || res.ScoreID != a1.ID {
 		t.Fatalf("first import = %+v", res)
 	}
 	// a1 is archived now; a2 is a replay-less decoy the file must not match.
@@ -323,5 +341,63 @@ func TestGuardedMarkRejectsArchived(t *testing.T) {
 	if again := testutil.Row(t, svc, player, "t1"); again.ReplayState != model.ReplayArchived ||
 		again.ReplaySize != 1234 || again.ReplaySHA256 != "cafe" {
 		t.Fatalf("archived row touched: %+v", again)
+	}
+}
+
+// TestGuardFailRemovesPendingFile covers the guard-race cleanup on a row that
+// stayed non-archived: the just-stored, unreferenced file must go.
+func TestGuardFailRemovesPendingFile(t *testing.T) {
+	svc, player := importService(t)
+	upsertBL(t, svc, player, testutil.FakePlay(model.KindScore, "t1", "LB1", testutil.T0, true))
+	sc := testutil.Row(t, svc, player, "t1")
+	ctx := context.Background()
+	if _, _, err := svc.PutReplay(sc, bytes.NewReader([]byte("stored bytes"))); err != nil {
+		t.Fatal(err)
+	}
+
+	service.RemoveUnreferencedImport(svc, ctx, sc)
+	if replayFileExists(t, svc, sc) {
+		t.Fatal("a non-archived row must not keep the just-stored file")
+	}
+}
+
+// TestGuardFailKeepsArchivedFile pins the other side of the guard-race
+// cleanup: an archived row owns its path, so the fresh bytes stay on disk.
+func TestGuardFailKeepsArchivedFile(t *testing.T) {
+	svc, player := importService(t)
+	upsertBL(t, svc, player, testutil.FakePlay(model.KindScore, "t1", "LB1", testutil.T0, true))
+	sc := testutil.Row(t, svc, player, "t1")
+	ctx := context.Background()
+	size, sum, err := svc.PutReplay(sc, bytes.NewReader([]byte("worker bytes")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MarkReplayArchived(ctx, sc.ID, size, sum); err != nil {
+		t.Fatal(err)
+	}
+
+	service.RemoveUnreferencedImport(svc, ctx, sc)
+	if !replayFileExists(t, svc, sc) {
+		t.Fatal("the guard-race cleanup deleted an archived row's file")
+	}
+}
+
+// TestFatalError pins which errors ImportReplay returns instead of mapping to
+// a skipped result: context failures, wrapped or not (spec §5).
+func TestFatalError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"context canceled", context.Canceled, true},
+		{"deadline exceeded", context.DeadlineExceeded, true},
+		{"wrapped canceled", fmt.Errorf("x: %w", context.Canceled), true},
+		{"wrapped deadline", fmt.Errorf("x: %w", context.DeadlineExceeded), true},
+		{"other error", errors.New("boom"), false},
+	} {
+		if got := service.FatalError(tc.err); got != tc.want {
+			t.Errorf("%s: FatalError = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

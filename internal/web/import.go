@@ -73,6 +73,9 @@ func (h *Handler) importReplays(w http.ResponseWriter, r *http.Request) {
 		if part.FormName() != "files" {
 			continue
 		}
+		if part.FileName() == "" { // a value part named "files" is not an upload
+			continue
+		}
 		if total >= h.importTotalMax { // the total is only known after streaming a part
 			results = append(results, service.ImportResult{
 				File: part.FileName(), Status: service.ImportStatusSkipped, Reason: "request size limit reached",

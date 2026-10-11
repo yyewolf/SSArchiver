@@ -86,13 +86,20 @@ func TestImportReplays(t *testing.T) {
 	player := e.seedBL()
 	c := e.login()
 
-	body, ct := multipart(t, [2]string{importFileName, string(importFixture("abc"))})
+	// The second file's play (same hash, mode, difficulty and score) is the
+	// already-archived t2 row, so it reports `already archived`.
+	alreadyName := "76561198038925092-X-Expert-Standard-HASH-LB1-1001.bsor"
+	body, ct := multipart(t,
+		[2]string{importFileName, string(importFixture("abc"))},
+		[2]string{alreadyName, string(importFixture("abc"))},
+	)
 	rec := e.postMultipart("/admin/replays/import", body, ct, withCookie(c))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
 	contains(t, rec.Body.String(),
-		`id="import-results"`, "hx-swap-oob", importFileName, "imported", "/s/bl/t1")
+		`id="import-results"`, "hx-swap-oob", importFileName, "imported", "/s/bl/t1",
+		"= "+alreadyName+" already archived")
 	if row := testutil.Row(t, e.svc, player, "t1"); row.ReplayState != model.ReplayArchived {
 		t.Fatalf("row not archived: %+v", row)
 	}
@@ -119,6 +126,42 @@ func TestImportMixedBatch(t *testing.T) {
 		`data-templ-type="warning"`, "Imported 1 of 3 replays")
 	if row := testutil.Row(t, e.svc, player, "t1"); row.ReplayState != model.ReplayArchived {
 		t.Fatalf("good row not archived: %+v", row)
+	}
+}
+
+// TestImportIgnoresNonFileParts pins that a value part named "files" (no
+// filename) is not an upload: it produces no result line, and the real file
+// part still imports.
+func TestImportIgnoresNonFileParts(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatformAs("beatleader", "bl", "BeatLeader"))
+	player := e.seedBL()
+	c := e.login()
+
+	var buf bytes.Buffer
+	w := mp.NewWriter(&buf)
+	if err := w.WriteField("files", "not-a-file"); err != nil {
+		t.Fatal(err)
+	}
+	fw, err := w.CreateFormFile("files", importFileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write(importFixture("abc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rec := e.postMultipart("/admin/replays/import", &buf, w.FormDataContentType(), withCookie(c))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	contains(t, rec.Body.String(), `id="import-results"`, "imported", importFileName, "/s/bl/t1")
+	if b := rec.Body.String(); strings.Contains(b, "✗") {
+		t.Fatalf("a non-file part must not produce a result line:\n%s", b)
+	}
+	if row := testutil.Row(t, e.svc, player, "t1"); row.ReplayState != model.ReplayArchived {
+		t.Fatalf("row not archived: %+v", row)
 	}
 }
 

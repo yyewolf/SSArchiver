@@ -252,7 +252,7 @@ Expected: FAIL (route/handler undefined).
 `internal/web/import.go`:
 
 - `r.MultipartReader()` — error → `toastOnly(w, r, toast.TypeError, "No files uploaded", "")` (also used when the loop finds no `files` parts).
-- Iterate parts; only `part.FormName() == "files"` is imported. Wrap each part in a tiny counting limiter that returns a `file too large` error past `ImportMaxFileBytes` (the error text becomes the skip reason via Task 2 step 6; `multipart.Reader.NextPart` drains the oversized remainder itself). Track cumulative bytes: once the total passes `ImportMaxTotalBytes`, later parts are skipped `request size limit reached` without calling the service.
+- Iterate parts; only `part.FormName() == "files"` is imported. Wrap each part in a tiny counting limiter that returns a `file too large` error past `ImportMaxFileBytes` (the error text becomes the skip reason via Task 2 step 6; `multipart.Reader.NextPart` drains the oversized remainder itself). Track cumulative bytes: once the total reaches `ImportMaxTotalBytes`, later parts are skipped `request size limit reached` without calling the service.
 - `res, err := h.svc.ImportReplay(r.Context(), part.FileName(), lr)`; a non-nil error (fatal only) → `h.serverError`.
 - Render `views.ImportDone(v, results)` with `v, err := h.adminPlayersView(r)`.
 

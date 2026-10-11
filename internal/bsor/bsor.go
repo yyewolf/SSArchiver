@@ -35,21 +35,21 @@ func ParseHeader(r io.Reader) (Header, error) {
 	b := bufio.NewReader(r)
 	var head [4]byte
 	if _, err := io.ReadFull(b, head[:]); err != nil {
-		return Header{}, err
+		return Header{}, fmt.Errorf("bsor: read magic: %w", err)
 	}
 	if m := binary.LittleEndian.Uint32(head[:]); m != magic {
 		return Header{}, fmt.Errorf("bsor: bad magic %#x", m)
 	}
 	ver, err := b.ReadByte()
 	if err != nil {
-		return Header{}, err
+		return Header{}, fmt.Errorf("bsor: read version: %w", err)
 	}
 	if ver != 1 {
 		return Header{}, fmt.Errorf("bsor: unsupported version %d", ver)
 	}
 	section, err := b.ReadByte()
 	if err != nil {
-		return Header{}, err
+		return Header{}, fmt.Errorf("bsor: read section type: %w", err)
 	}
 	if section != 0 {
 		return Header{}, fmt.Errorf("bsor: first section is type %d, want 0 (info)", section)
