@@ -3,6 +3,8 @@ package service_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"strings"
 	"testing"
@@ -48,12 +50,40 @@ func importFile(t *testing.T, svc *service.Service, name string, body []byte) se
 
 func ptr(f float64) *float64 { return &f }
 
+// replayFile reads a row's stored replay file.
+func replayFile(t *testing.T, svc *service.Service, sc *model.Score) []byte {
+	t.Helper()
+	path, err := svc.ReplayPath(sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// assertStored verifies the row archived the exact uploaded bytes.
+func assertStored(t *testing.T, svc *service.Service, sc *model.Score, body []byte) {
+	t.Helper()
+	sum := sha256.Sum256(body)
+	if sc.ReplaySHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("ReplaySHA256 = %s, want %s", sc.ReplaySHA256, hex.EncodeToString(sum[:]))
+	}
+	if stored := replayFile(t, svc, sc); !bytes.Equal(stored, body) {
+		t.Fatalf("stored file is not byte-identical: %d bytes, want %d", len(stored), len(body))
+	}
+}
+
 func TestImportPBClear(t *testing.T) {
 	svc, player := importService(t)
 	upsertBL(t, svc, player, testutil.FakePlay(model.KindScore, "t1", "LB1", testutil.T0, false))
 	row := testutil.Row(t, svc, player, "t1")
 
-	res := importFile(t, svc, "76561198038925092-X-Expert-Standard-HASH-LB1-1000.bsor", bsorFixture("abc", "HASH-LB1", 900, 0))
+	name := "76561198038925092-X-Expert-Standard-HASH-LB1-1000.bsor"
+	body := bsorFixture("abc", "HASH-LB1", 900, 0)
+	res := importFile(t, svc, name, body)
 	if res.Status != service.ImportStatusImported || res.ScoreID != row.ID || res.Map != "Song LB1 [Expert]" ||
 		res.URL != "/s/bl/t1" || res.Reason != "" || res.PlayerID != player {
 		t.Fatalf("result = %+v", res)
@@ -62,13 +92,7 @@ func TestImportPBClear(t *testing.T) {
 	if got.ReplayState != model.ReplayArchived || got.ReplaySize <= 0 {
 		t.Fatalf("row not archived: %+v", got)
 	}
-	path, err := svc.ReplayPath(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("replay file: %v", err)
-	}
+	assertStored(t, svc, got, body)
 }
 
 func TestImportFailByEndTime(t *testing.T) {
@@ -76,10 +100,27 @@ func TestImportFailByEndTime(t *testing.T) {
 	upsertBL(t, svc, player, testutil.FakeAttempt("a1", "LB1", testutil.T0, model.EndFail, ptr(67.91858), 426137, false))
 	row := testutil.Row(t, svc, player, "a1")
 
-	res := importFile(t, svc, "76561198038925092-fail-X-Expert-Standard-HASH-LB1-1000.bsor", bsorFixture("abc", "HASH-LB1", 426137, 67.91858))
+	name := "76561198038925092-fail-X-Expert-Standard-HASH-LB1-1000.bsor"
+	body := bsorFixture("abc", "HASH-LB1", 426137, 67.91858)
+	res := importFile(t, svc, name, body)
 	if res.Status != service.ImportStatusImported || res.ScoreID != row.ID || res.URL != "/s/bl/attempt/a1" {
 		t.Fatalf("result = %+v", res)
 	}
+	assertStored(t, svc, testutil.Row(t, svc, player, "a1"), body)
+}
+
+// TestImportLargeReplayStoredIntact pins byte-identity for a file larger than
+// the bufio read chunk: real replays carry kilobytes of frames after info.
+func TestImportLargeReplayStoredIntact(t *testing.T) {
+	svc, player := importService(t)
+	upsertBL(t, svc, player, testutil.FakePlay(model.KindScore, "t1", "LB1", testutil.T0, false))
+
+	body := append(bsorFixture("abc", "HASH-LB1", 900, 0), make([]byte, 10000)...)
+	res := importFile(t, svc, "76561198038925092-X-Expert-Standard-HASH-LB1-1000.bsor", body)
+	if res.Status != service.ImportStatusImported {
+		t.Fatalf("result = %+v", res)
+	}
+	assertStored(t, svc, testutil.Row(t, svc, player, "t1"), body)
 }
 
 func TestImportFailScoreMismatch(t *testing.T) {
@@ -193,6 +234,27 @@ func TestImportAlreadyArchived(t *testing.T) {
 	res := importFile(t, svc, "76561198038925092-X-Expert-Standard-HASH-LB1-1000.bsor", bsorFixture("abc", "HASH-LB1", 900, 0))
 	if res.Status != service.ImportStatusAlready || res.Reason != "already archived" {
 		t.Fatalf("result = %+v", res)
+	}
+}
+
+// TestImportAlreadyArchivedWithDecoy re-imports a file whose own play is
+// archived while another replay-less attempt of the same map exists; the
+// outcome must be `already`, not "no matching play".
+func TestImportAlreadyArchivedWithDecoy(t *testing.T) {
+	svc, player := importService(t)
+	upsertBL(t, svc, player,
+		testutil.FakeAttempt("a1", "LB1", testutil.T0, model.EndFail, ptr(67.91858), 426137, false),
+		testutil.FakeAttempt("a2", "LB1", testutil.T0, model.EndFail, ptr(30.5), 123456, false))
+
+	name := "76561198038925092-fail-X-Expert-Standard-HASH-LB1-1000.bsor"
+	body := bsorFixture("abc", "HASH-LB1", 426137, 67.91858)
+	if res := importFile(t, svc, name, body); res.Status != service.ImportStatusImported {
+		t.Fatalf("first import = %+v", res)
+	}
+	// a1 is archived now; a2 is a replay-less decoy the file must not match.
+	res := importFile(t, svc, name, body)
+	if res.Status != service.ImportStatusAlready || res.Reason != "already archived" {
+		t.Fatalf("re-import = %+v", res)
 	}
 }
 

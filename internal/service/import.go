@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -45,7 +46,8 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 	if err := ctx.Err(); err != nil {
 		return res, err
 	}
-	b := bufio.NewReader(r)
+	var head bytes.Buffer
+	b := bufio.NewReader(io.TeeReader(r, &head))
 	h, err := bsor.ParseHeader(b)
 	if err != nil {
 		return skip(res, "not a BSOR replay"), nil
@@ -80,20 +82,21 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 	if err != nil {
 		return skip(res, err.Error()), nil
 	}
-	var archived, pending int
+	var archived []*model.Score
+	var pending int
 	var cands []*model.Score
 	for _, row := range rows {
 		switch row.ReplayState {
 		case model.ReplayNone, model.ReplayGone, model.ReplayFailed:
 			cands = append(cands, row)
 		case model.ReplayArchived:
-			archived++
+			archived = append(archived, row)
 		default:
 			pending++
 		}
 	}
 	if len(cands) == 0 {
-		if archived > 0 {
+		if len(archived) > 0 {
 			res.Status, res.Reason = ImportStatusAlready, "already archived"
 			return res, nil
 		}
@@ -103,17 +106,24 @@ func (s *Service) ImportReplay(ctx context.Context, name string, r io.Reader) (I
 		return skip(res, noMatchReason(h, name)), nil
 	}
 	matches := matchCandidates(cands, h, name)
-	switch {
-	case len(matches) == 0:
+	if len(matches) == 0 {
+		// No replay-less row matches, but the file's own play may already be
+		// archived among the other rows (spec §5 step 5).
+		if len(matchCandidates(archived, h, name)) > 0 {
+			res.Status, res.Reason = ImportStatusAlready, "already archived"
+			return res, nil
+		}
 		return skip(res, noMatchReason(h, name)), nil
-	case len(matches) > 1:
+	}
+	if len(matches) > 1 {
 		return skip(res, fmt.Sprintf("ambiguous: %d matching plays", len(matches))), nil
 	}
 	row := matches[0]
-	// b holds the bytes ParseHeader read ahead of the info section; replaying
-	// them ahead of r gives PutReplay the whole file from the single-pass
-	// stream.
-	size, sum, err := s.PutReplay(row, io.MultiReader(b, r))
+	// ParseHeader consumes the info section through its own bufio and
+	// discards that bufio's read-ahead; the tee captured every byte read
+	// from r so far, so replaying head ahead of r gives PutReplay the exact
+	// original stream (b's own leftover buffer is a subset of head).
+	size, sum, err := s.PutReplay(row, io.MultiReader(&head, r))
 	if err != nil {
 		return skip(res, err.Error()), nil
 	}
