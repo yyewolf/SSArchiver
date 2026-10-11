@@ -133,8 +133,10 @@ func (d *infoDecoder) str() string {
 		d.err = err
 		return ""
 	}
-	size := int32(binary.LittleEndian.Uint32(n[:]))
-	if size < 0 || size > maxStringLen {
+	// The length is unsigned in the format; anything over the header's
+	// realistic string bound (including values over MaxInt32) is garbage.
+	size := binary.LittleEndian.Uint32(n[:])
+	if size > maxStringLen {
 		d.err = fmt.Errorf("bsor: string length %d out of range", size)
 		return ""
 	}
@@ -159,7 +161,12 @@ func (d *infoDecoder) i32() int32 {
 		d.err = err
 		return 0
 	}
-	return int32(binary.LittleEndian.Uint32(buf[:]))
+	u := binary.LittleEndian.Uint32(buf[:])
+	if u > math.MaxInt32 { // the score field is a signed int32; anything else is corrupt
+		d.err = fmt.Errorf("bsor: score %d out of range", u)
+		return 0
+	}
+	return int32(u)
 }
 
 func (d *infoDecoder) f32() float64 {
