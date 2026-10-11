@@ -173,7 +173,7 @@ Tests:
 - `TestImportPendingSkipped`: score row with `HasReplay: true` (state `pending`), no candidates otherwise → skipped `download in progress`.
 - `TestImportAlreadyArchived`: score row archived via `testutil.Archive` → skipped `already archived`.
 - `TestImportUntrackedPlayer`: fixture `playerID: "zzz"` → skipped `no tracked player for zzz`.
-- `TestImportUnknownMap`: fixture hash `BeThereForYou` (also covers real placeholder hashes) → skipped `map not in the archive`.
+- `TestImportUnknownMap`: fixture hash with no leaderboard in the archive → skipped `map not in the archive`.
 - `TestImportSupersededExactScore`: two score rows on `LB1`: `"t-old"` score 100 (via a direct `platform.Play` with `UnmodifiedScore/ModifiedScore = 100`, `PersonalBest false`), `"t1"` score 900; fixture score 100 → `imported` with `ScoreID` = the t-old row.
 - `TestImportNotBSOR`: `svc.ImportReplay(ctx, "x.bsor", strings.NewReader("hello"))` → skipped `not a BSOR replay`.
 - `TestGuardedMarkRejectsArchived`: call the guarded update directly (export it for the test via `internal/service/export_test.go` as `MarkReplayImported(ctx, sc, size, sha) (bool, error)`): on a `none` row → `(true, nil)` and the row is archived; run it again on the now-archived row → `(false, nil)` and the row is untouched. (This method is the `RowsAffected = 0` race path of step 6; Task 2's `ImportReplay` calls it right after `PutReplay`.)
@@ -280,7 +280,7 @@ git commit -m "feat(web): import local .bsor replays from Manage"
 ### Task 4: Manual verification pass (no code)
 
 - [ ] Run the server locally: `make run`; sign in; on **Manage** import the 11 files from `.worktrees/samples`.
-- [ ] Expected: 6 clears and 4 fails import onto their rows (or report `already archived` where the row already has a replay — both are correct per spec §5); `Be There For You` reports `map not in the archive`.
+- [ ] Expected: 6 clears and 4 fails import onto their rows (or report `already archived` where the row already has a replay — both are correct per spec §5); `Be There For You` reports `already archived` (BeatLeader's own hash for that OST map is the pseudo-hash `BeThereForYou`; live-verified).
 - [ ] Open one imported replay's page: the raw download works and the embed plays it in the BeatLeader hosted viewer.
 - [ ] Re-import the same batch: every file reports `already archived` / `download in progress`, and no replay file changed on disk (row `ReplaySHA256` stable).
 - [ ] No commit (nothing to commit; report findings instead — fix-code fallout becomes follow-up tasks before the branch review).

@@ -72,9 +72,12 @@ Success criteria:
    cannot be read from the header (filename token only). Score must match
    exactly: `header.Score = unmodified_score` (BeatLeader rows always carry
    it; a degenerate 0 simply fails to match and the file is skipped).
-- Some maps have a placeholder hash in the header (e.g. `BeThereForYou` for an
-  OST map that BeatLeader lists under a real hash). Such files cannot be
-  matched by hash and must be skipped with a reason.
+- BeatLeader itself stores pseudo-hashes for some OST maps (`Be There For You
+  [OST II]` is listed by the API with hash `BeThereForYou` — verified live), so
+  a local file's matching "placeholder" hash still matches the archive's
+  leaderboard row. A hash the archive has no leaderboard for (genuinely
+  unknown map, or a map difficulty the player's feeds never listed) cannot be
+  matched and must be skipped with a reason.
 - Attempts of the sampled player are public (the instance already archives
   them); `replay: null` attempt rows (`has_replay = false`,
   `replay_state = 'none'`) are exactly the rows this import fills.
