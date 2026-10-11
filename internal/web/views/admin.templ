@@ -1,6 +1,7 @@
 package views
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -156,6 +157,7 @@ templ AdminPlayersPage(p Page, v AdminPlayersView) {
 				<div id="lookup-result" class="mt-4 empty:hidden"></div>
 			}
 		}
+		@ImportCard()
 		@AdminPlayersTable(v)
 	}
 }
@@ -483,6 +485,80 @@ templ PlayerAdded(v AdminPlayersView, name string) {
 	@AdminPlayersTable(v)
 	<div id="lookup-result" hx-swap-oob="innerHTML"></div>
 	@ToastOOB(toast.TypeSuccess, "Now tracking "+name, "Their history is being archived in the background.")
+}
+
+// ImportCard is the Manage card that uploads local .bsor replays (spec §6).
+// Files are matched to their players automatically and fill in replays the
+// platforms no longer serve; already archived or still downloading rows are
+// left untouched.
+templ ImportCard() {
+	@card.Card(card.Props{Class: "mb-8"}) {
+		@card.Header() {
+			@card.Title() {
+				Import replays
+			}
+			@card.Description() {
+				Local .bsor replays are matched to their players automatically and fill in replays the platforms no longer serve. Files already archived or still downloading are left untouched.
+			}
+		}
+		@card.Content() {
+			<form hx-post="/admin/replays/import" hx-target="#admin-players" hx-swap="outerHTML" hx-encoding="multipart/form-data" class="flex flex-col gap-2 sm:flex-row sm:items-center">
+				@input.Input(input.Props{Name: "files", Type: "file", Accept: ".bsor", Class: "sm:flex-1", Attributes: templ.Attributes{"multiple": true, "aria-label": "Replay files"}})
+				@button.Button(button.Props{Type: button.TypeSubmit}) {
+					Import
+				}
+			</form>
+			<div id="import-results" class="mt-4 empty:hidden"></div>
+		}
+	}
+}
+
+// ImportResults is the per-file outcome panel (spec §6), swapped out of band:
+// the card sits outside #admin-players, so the table swap cannot wipe it.
+templ ImportResults(rs []service.ImportResult) {
+	<div id="import-results" hx-swap-oob="true" class="mt-4">
+		for _, res := range rs {
+			if res.Status == service.ImportStatusImported {
+				<p class="text-sm">
+					<span>✓ { res.File }</span>
+					<a href={ templ.SafeURL(res.URL) } class="ml-1 underline-offset-4 hover:underline">{ res.Map } imported</a>
+				</p>
+			} else if res.Status == service.ImportStatusAlready {
+				<p class="text-muted-foreground text-sm">= { res.File } already archived</p>
+			} else {
+				<p class="text-destructive text-sm">✗ { res.File } { res.Reason }</p>
+			}
+		}
+	</div>
+}
+
+// importToastType is a success unless some file was skipped.
+func importToastType(rs []service.ImportResult) toast.Type {
+	for _, r := range rs {
+		if r.Status == service.ImportStatusSkipped {
+			return toast.TypeWarning
+		}
+	}
+	return toast.TypeSuccess
+}
+
+// importToastTitle summarises the batch.
+func importToastTitle(rs []service.ImportResult) string {
+	imported := 0
+	for _, r := range rs {
+		if r.Status == service.ImportStatusImported {
+			imported++
+		}
+	}
+	return fmt.Sprintf("Imported %d of %d replays", imported, len(rs))
+}
+
+// ImportDone answers an import POST: the refreshed players table, the
+// out-of-band results panel and a summary toast.
+templ ImportDone(v AdminPlayersView, rs []service.ImportResult) {
+	@AdminPlayersTable(v)
+	@ImportResults(rs)
+	@ToastOOB(importToastType(rs), importToastTitle(rs), "")
 }
 
 templ PlayerRowToast(pl service.PlayerSummary, v AdminPlayersView, t toast.Type, title string) {

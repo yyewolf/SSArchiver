@@ -29,23 +29,36 @@ type StatusSource interface {
 }
 
 type Deps struct {
-	Service *service.Service
-	Status  StatusSource
-	Viewer  *viewer.Handler
-	Config  config.Config
+	Service             *service.Service
+	Status              StatusSource
+	Viewer              *viewer.Handler
+	Config              config.Config
+	ImportMaxFileBytes  int64 // cap per uploaded .bsor file; 0 = default
+	ImportMaxTotalBytes int64 // cap per import request; 0 = default
 }
 
 type Handler struct {
-	svc       *service.Service
-	status    StatusSource
-	viewer    *viewer.Handler
-	cfg       config.Config
-	logins    *loginLimiter
-	setupDone atomic.Bool
+	svc            *service.Service
+	status         StatusSource
+	viewer         *viewer.Handler
+	cfg            config.Config
+	logins         *loginLimiter
+	setupDone      atomic.Bool
+	importFileMax  int64
+	importTotalMax int64
 }
 
 func New(d Deps) *Handler {
-	return &Handler{svc: d.Service, status: d.Status, viewer: d.Viewer, cfg: d.Config, logins: newLoginLimiter()}
+	if d.ImportMaxFileBytes <= 0 {
+		d.ImportMaxFileBytes = 256 << 20 // 256 MiB per file
+	}
+	if d.ImportMaxTotalBytes <= 0 {
+		d.ImportMaxTotalBytes = 4 << 30 // 4 GiB per request
+	}
+	return &Handler{
+		svc: d.Service, status: d.Status, viewer: d.Viewer, cfg: d.Config, logins: newLoginLimiter(),
+		importFileMax: d.ImportMaxFileBytes, importTotalMax: d.ImportMaxTotalBytes,
+	}
 }
 
 // Routes registers every UI route. Later tasks add lines here.
@@ -100,6 +113,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/settings", h.requireAdmin(h.saveSettings))
 	mux.HandleFunc("POST /admin/settings/viewer", h.requireAdmin(h.saveViewerSettings))
 	mux.HandleFunc("POST /admin/password", h.requireAdmin(h.changePassword))
+	mux.HandleFunc("POST /admin/replays/import", h.requireAdmin(h.importReplays))
 }
 
 // Middleware wraps the whole mux (UI and API).

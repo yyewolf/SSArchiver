@@ -42,19 +42,24 @@ func newEnv(t *testing.T) *testEnv { return newEnvWith(t, nil) }
 
 // newEnvWith also registers the fake third platform when fp is not nil.
 func newEnvWith(t *testing.T, fp *testutil.FakePlatform) *testEnv {
+	return newEnvDeps(t, fp, nil)
+}
+
+// newEnvDeps is newEnvWith with the handler's Deps tuned before web.New.
+func newEnvDeps(t *testing.T, fp *testutil.FakePlatform, tune func(*web.Deps)) *testEnv {
 	t.Helper()
 	vh := viewer.NewHandler(fstest.MapFS{"index.html.gz": {Data: testutil.Gzip("<html>viewer</html>")}}, "test")
-	return newEnvCore(t, fp, vh)
+	return newEnvCore(t, fp, vh, tune)
 }
 
 // newEnvNoViewer is newEnv with no bundled ArcViewer build.
 func newEnvNoViewer(t *testing.T) *testEnv {
 	t.Helper()
 	vh := viewer.NewHandler(fstest.MapFS{}, "test")
-	return newEnvCore(t, nil, vh)
+	return newEnvCore(t, nil, vh, nil)
 }
 
-func newEnvCore(t *testing.T, fp *testutil.FakePlatform, vh *viewer.Handler) *testEnv {
+func newEnvCore(t *testing.T, fp *testutil.FakePlatform, vh *viewer.Handler, tune func(*web.Deps)) *testEnv {
 	t.Helper()
 	plats := []platform.Platform{scoresaber.NewPlatform(&testutil.Resolver{Players: testutil.DefaultPlayers()}, nil)}
 	if fp != nil {
@@ -62,7 +67,11 @@ func newEnvCore(t *testing.T, fp *testutil.FakePlatform, vh *viewer.Handler) *te
 	}
 	svc, _, clk := testutil.NewServiceWith(t, plats...)
 	st := &statusStub{st: archiver.Status{State: archiver.StateIdle, Since: testutil.T0}}
-	h := web.New(web.Deps{Service: svc, Status: st, Viewer: vh, Config: config.Config{HourlyBudget: 300, BaseURL: "https://replays.example.com"}})
+	deps := web.Deps{Service: svc, Status: st, Viewer: vh, Config: config.Config{HourlyBudget: 300, BaseURL: "https://replays.example.com"}}
+	if tune != nil {
+		tune(&deps)
+	}
+	h := web.New(deps)
 	mux := http.NewServeMux()
 	h.Routes(mux)
 	return &testEnv{t: t, svc: svc, clk: clk, status: st, fp: fp, h: h.Middleware(mux)}
