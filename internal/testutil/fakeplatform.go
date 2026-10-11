@@ -200,8 +200,26 @@ func FakePlay(kind, externalID, lbExternalID string, setAt time.Time, replay boo
 			ExternalID: lbExternalID, SongHash: "HASH-" + lbExternalID, SongName: "Song " + lbExternalID,
 			Difficulty: 7, DifficultyRaw: "Expert", GameMode: "Standard", Status: "UNRANKED", MaxScore: 1000,
 		},
-		Kind: kind, EndType: model.EndClear, ExternalID: externalID, ModifiedScore: 900, Accuracy: 0.9,
+		Kind: kind, EndType: model.EndClear, ExternalID: externalID, ModifiedScore: 900, UnmodifiedScore: 900, Accuracy: 0.9,
 		PersonalBest: kind == model.KindScore, SetAt: setAt, HasReplay: replay,
+	}
+	if replay {
+		p.ReplayURL = "https://tp.example/replays/" + externalID + ".tpr"
+	}
+	return p
+}
+
+// FakeAttempt builds a testplat attempt play with an explicit end type,
+// end time and score (FakePlay always reports clear/nil/900).
+func FakeAttempt(externalID, lbExternalID string, setAt time.Time, endType string, endTime *float64, score int64, replay bool) platform.Play {
+	p := platform.Play{
+		Leaderboard: platform.LeaderboardData{
+			ExternalID: lbExternalID, SongHash: "HASH-" + lbExternalID, SongName: "Song " + lbExternalID,
+			Difficulty: 7, DifficultyRaw: "Expert", GameMode: "Standard", Status: "UNRANKED", MaxScore: 1000,
+		},
+		Kind: model.KindAttempt, EndType: endType, ExternalID: externalID, EndTime: endTime,
+		ModifiedScore: score, UnmodifiedScore: score, Accuracy: 0.9,
+		SetAt: setAt, HasReplay: replay,
 	}
 	if replay {
 		p.ReplayURL = "https://tp.example/replays/" + externalID + ".tpr"
