@@ -65,6 +65,19 @@ func HumanDuration(d time.Duration) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
+// SessionSpan is a play session's date and UTC time range.
+func SessionSpan(start, end time.Time) string {
+	start, end = start.UTC(), end.UTC()
+	out := start.Format("2 Jan 2006, 15:04")
+	switch {
+	case end.YearDay() != start.YearDay() || end.Year() != start.Year():
+		out += " – " + end.Format("2 Jan 15:04")
+	case end.Sub(start) >= time.Minute:
+		out += "–" + end.Format("15:04")
+	}
+	return out + " UTC"
+}
+
 func TimeAgo(t, now time.Time) string {
 	if t.IsZero() {
 		return "never"

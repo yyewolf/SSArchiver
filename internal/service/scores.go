@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"gorm.io/gorm/clause"
 
@@ -81,8 +82,9 @@ type ScoreFilter struct {
 	Platform   string // "" = every platform
 	MinScore   *int64 // inclusive bounds on modified_score
 	MaxScore   *int64
-	MapKey     string   // one map (the merged page's "more plays")
-	Types      []string // play types; nil = complete (spec §6.2)
+	MapKey     string    // one map (the merged page's "more plays")
+	From, To   time.Time // inclusive set_at bounds (one session); zero = open
+	Types      []string  // play types; nil = complete (spec §6.2)
 	Page       int
 	PerPage    int
 }
@@ -135,6 +137,13 @@ func (f ScoreFilter) where() (string, []any) {
 	}
 	if f.MapKey != "" {
 		add("lb.map_key = ?", f.MapKey)
+	}
+	// julianday compares instants to the millisecond, whatever the stored layout
+	if !f.From.IsZero() {
+		add("julianday(s.set_at) >= julianday(?)", f.From.UTC().Format(time.RFC3339Nano))
+	}
+	if !f.To.IsZero() {
+		add("julianday(s.set_at) <= julianday(?)", f.To.UTC().Format(time.RFC3339Nano))
 	}
 	if cond, targs := typeCond(f.Types); cond != "" {
 		add(cond, targs...)

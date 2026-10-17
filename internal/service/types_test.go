@@ -52,13 +52,13 @@ func TestTypeFilter(t *testing.T) {
 			t.Errorf("types %v: total %d, want %d (%v)", c.types, l.Total, c.want, err)
 		}
 	}
-	groups, _ := svc.ListMapGroups(ctx, service.ScoreFilter{PlayerID: tess})
+	groups, _ := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: tess})
 	if groups.Total != 2 { // lb-s (score) and lb-clear
 		t.Fatalf("by default the merged view hides maps that only have non-clear attempts: %d", groups.Total)
 	}
-	fails, _ := svc.ListMapGroups(ctx, service.ScoreFilter{PlayerID: tess, Types: []string{model.EndFail}})
-	if fails.Total != 1 || len(fails.Groups[0].Chips) != 1 || fails.Groups[0].Latest.ExternalID != "a-fail" {
-		t.Fatalf("type=fail lists the map with its PB chip and the fail as newest play: %+v", fails.Groups)
+	fails, _ := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: tess, Types: []string{model.EndFail}})
+	if fails.Total != 1 || len(groupsOf(fails)[0].Chips) != 1 || groupsOf(fails)[0].Latest.ExternalID != "a-fail" {
+		t.Fatalf("type=fail lists the map with its best-score chip and the fail as newest play: %+v", fails.Sessions)
 	}
 }
 

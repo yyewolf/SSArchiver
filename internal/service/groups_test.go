@@ -43,24 +43,39 @@ func crossFixture(t *testing.T) (*service.Service, string) {
 	return svc, alice
 }
 
-func TestListMapGroupsMergesPlatforms(t *testing.T) {
+// groupsOf flattens a session list into its map rows.
+func groupsOf(l service.SessionList) []service.MapGroup {
+	var out []service.MapGroup
+	for _, s := range l.Sessions {
+		out = append(out, s.Groups...)
+	}
+	return out
+}
+
+func TestListSessionsMergesPlatforms(t *testing.T) {
 	svc, alice := crossFixture(t)
 	ctx := context.Background()
-	list, err := svc.ListMapGroups(ctx, service.ScoreFilter{PlayerID: alice})
+	list, err := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: alice})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if list.Total != 5 || len(list.Groups) != 5 || list.Pages != 1 {
-		t.Fatalf("list = total %d, %d groups, %d pages", list.Total, len(list.Groups), list.Pages)
+	if list.Total != 5 || len(list.Sessions) != 1 || list.Pages != 1 {
+		t.Fatalf("list = total %d, %d sessions, %d pages", list.Total, len(list.Sessions), list.Pages)
 	}
+	sess := list.Sessions[0]
+	if !sess.Start.Equal(testutil.T0.Add(-2*time.Hour)) || !sess.End.Equal(testutil.T0.Add(4*time.Minute)) ||
+		sess.Plays != 7 || sess.Maps != 5 || sess.Continued {
+		t.Fatalf("no pause over 2h makes one session: %+v", sess)
+	}
+	groups := groupsOf(list)
 	var order []string
-	for _, g := range list.Groups {
+	for _, g := range groups {
 		order = append(order, g.Latest.ExternalID)
 	}
 	if want := []string{"t1", "2", "3", "t2", "5"}; !equal(order, want) {
 		t.Fatalf("maps by newest play = %v, want %v", order, want)
 	}
-	g := list.Groups[0]
+	g := groups[0]
 	if g.MapKey != map501 || g.Plays != 3 || len(g.Chips) != 2 || g.More() != 1 {
 		t.Fatalf("map 501 = %+v", g)
 	}
@@ -70,35 +85,95 @@ func TestListMapGroupsMergesPlatforms(t *testing.T) {
 	if g.Latest.Leaderboard == nil || g.Chips[0].Leaderboard == nil {
 		t.Fatal("rows come with their leaderboard")
 	}
-	if last := list.Groups[4]; len(last.Chips) != 0 || last.Latest.ExternalID != "5" || last.More() != 1 {
-		t.Fatalf("a map whose only play is not a PB is still listed: %+v", last)
+	if last := groups[4]; len(last.Chips) != 1 || last.Chips[0].ExternalID != "5" || last.More() != 0 {
+		t.Fatalf("the session's best score is a chip even when it is no longer the PB: %+v", last)
 	}
 	plays, err := svc.ListScores(ctx, service.ScoreFilter{PlayerID: alice, MapKey: map501})
 	if err != nil || plays.Total != 3 || plays.Items[0].ExternalID != "t1" || plays.Items[1].ExternalID != "1" || plays.Items[2].ExternalID != "4" {
 		t.Fatalf("every play of one map, newest first: %+v %v", plays, err)
 	}
-	if _, err := svc.ListMapGroups(ctx, service.ScoreFilter{}); err == nil {
+	if _, err := svc.ListSessions(ctx, service.ScoreFilter{}); err == nil {
 		t.Fatal("the merged view is per player")
 	}
 }
 
-func TestListMapGroupsFiltersAndPaging(t *testing.T) {
+// A pause over SessionGap splits the history; a map played in both sessions
+// is listed once in each, with that session's plays only.
+func TestListSessionsSplitsOnPause(t *testing.T) {
 	svc, alice := crossFixture(t)
 	ctx := context.Background()
-	groups := func(f service.ScoreFilter) service.MapGroupList {
+	// map 501 again, 2h01m before the fixture's oldest play (T0-2h): a session of its own
+	old := testutil.Item("1001", 6, 501, testutil.T0.Add(-4*time.Hour-time.Minute), true)
+	old.Score.PersonalBest, old.Score.ModifiedScore = false, 800_000
+	edge := testutil.Item("1001", 7, 502, testutil.T0.Add(-4*time.Hour-time.Minute-service.SessionGap), true)
+	edge.Score.PersonalBest = false
+	testutil.Upsert(t, svc, alice, old, edge)
+
+	list, err := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: alice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.Total != 7 || len(list.Sessions) != 2 {
+		t.Fatalf("list = total %d, %d sessions", list.Total, len(list.Sessions))
+	}
+	newer, older := list.Sessions[0], list.Sessions[1]
+	if len(newer.Groups) != 5 || newer.Plays != 7 {
+		t.Fatalf("newest session first, unchanged: %+v", newer)
+	}
+	if !older.Start.Equal(edge.Score.CreatedAt) || !older.End.Equal(old.Score.CreatedAt) || older.Plays != 2 || older.Maps != 2 {
+		t.Fatalf("a pause of exactly SessionGap keeps the session: %+v", older)
+	}
+	g := older.Groups[0]
+	if g.MapKey != map501 || g.Plays != 1 || len(g.Chips) != 1 || g.Chips[0].ExternalID != "6" || g.Latest.ExternalID != "6" {
+		t.Fatalf("map 501 in the old session only has its own play: %+v", g)
+	}
+
+	page2, err := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: alice, PerPage: 3, Page: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page2.Sessions) != 2 || !page2.Sessions[0].Continued || len(page2.Sessions[0].Groups) != 2 ||
+		page2.Sessions[1].Continued || len(page2.Sessions[1].Groups) != 1 || page2.Sessions[1].Maps != 2 {
+		t.Fatalf("page 2 = end of the newer session (continued), start of the older one: %+v", page2.Sessions)
+	}
+	page3, _ := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: alice, PerPage: 3, Page: 3})
+	if len(page3.Sessions) != 1 || !page3.Sessions[0].Continued || page3.Sessions[0].Groups[0].Latest.ExternalID != "7" {
+		t.Fatalf("page 3 = the rest of the older session: %+v", page3.Sessions)
+	}
+
+	inOld, err := svc.ListScores(ctx, service.ScoreFilter{PlayerID: alice, MapKey: map501, From: older.Start, To: older.End})
+	if err != nil || inOld.Total != 1 || inOld.Items[0].ExternalID != "6" {
+		t.Fatalf("From/To keep one session's plays: %+v %v", inOld, err)
+	}
+	inNew, _ := svc.ListScores(ctx, service.ScoreFilter{PlayerID: alice, From: newer.Start, To: newer.End})
+	if inNew.Total != 7 {
+		t.Fatalf("the newer session's bounds hold all its plays (sub-second precision kept): %d", inNew.Total)
+	}
+
+	// filters never move session bounds
+	ss, _ := svc.ListSessions(ctx, service.ScoreFilter{PlayerID: alice, Search: "Song 501"})
+	if len(ss.Sessions) != 2 || !ss.Sessions[0].Start.Equal(newer.Start) || ss.Sessions[0].Plays != 2 {
+		t.Fatalf("search keeps the sessions' bounds: %+v", ss.Sessions)
+	}
+}
+
+func TestListSessionsFiltersAndPaging(t *testing.T) {
+	svc, alice := crossFixture(t)
+	ctx := context.Background()
+	groups := func(f service.ScoreFilter) service.SessionList {
 		t.Helper()
 		f.PlayerID = alice
-		l, err := svc.ListMapGroups(ctx, f)
+		l, err := svc.ListSessions(ctx, f)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return l
 	}
-	if l := groups(service.ScoreFilter{PerPage: 3, Page: 2}); l.Total != 5 || l.Pages != 2 || len(l.Groups) != 2 || l.Groups[0].Latest.ExternalID != "t2" {
+	if l := groups(service.ScoreFilter{PerPage: 3, Page: 2}); l.Total != 5 || l.Pages != 2 || len(groupsOf(l)) != 2 || groupsOf(l)[0].Latest.ExternalID != "t2" {
 		t.Fatalf("page 2 = %+v", l)
 	}
 	tp := groups(service.ScoreFilter{Platform: "testplat"})
-	if tp.Total != 2 || len(tp.Groups[0].Chips) != 1 || tp.Groups[0].Chips[0].ExternalID != "t1" {
+	if tp.Total != 2 || len(groupsOf(tp)[0].Chips) != 1 || groupsOf(tp)[0].Chips[0].ExternalID != "t1" {
 		t.Fatalf("platform filter = %+v", tp)
 	}
 	if l := groups(service.ScoreFilter{MinScore: new(int64(960_000))}); l.Total != 4 {
@@ -110,10 +185,10 @@ func TestListMapGroupsFiltersAndPaging(t *testing.T) {
 	if l := groups(service.ScoreFilter{Search: "Song 502"}); l.Total != 1 {
 		t.Fatalf("search: total %d", l.Total)
 	}
-	if l := groups(service.ScoreFilter{State: service.FilterArchived}); l.Total != 1 || l.Groups[0].MapKey != map501 {
+	if l := groups(service.ScoreFilter{State: service.FilterArchived}); l.Total != 1 || groupsOf(l)[0].MapKey != map501 {
 		t.Fatalf("state: %+v", l)
 	}
-	if l := groups(service.ScoreFilter{Platform: model.PlatformScoreSaber, MaxScore: new(int64(950_000))}); l.Total != 0 || len(l.Groups) != 0 || l.Pages != 1 {
+	if l := groups(service.ScoreFilter{Platform: model.PlatformScoreSaber, MaxScore: new(int64(950_000))}); l.Total != 0 || len(l.Sessions) != 0 || l.Pages != 1 {
 		t.Fatalf("combined filters: %+v", l)
 	}
 }

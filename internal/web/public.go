@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/httpx"
 	"github.com/yyewolf/ssarchiver/internal/model"
@@ -60,13 +61,13 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := scoreFilter(r.URL.Query(), id, h.svc.Platforms())
-	groups, err := h.svc.ListMapGroups(ctx, f)
+	sessions, err := h.svc.ListSessions(ctx, f)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	plats := h.accountPlatforms(sum)
-	v := views.PlayerView{Player: &sum.Player, Summary: sum, Groups: groups, Filter: f, Platforms: plats, Now: h.svc.Now()}
+	v := views.PlayerView{Player: &sum.Player, Summary: sum, Sessions: sessions, Filter: f, Platforms: plats, Now: h.svc.Now()}
 	v.HasAttempts = hasAttempts(sum)
 	if isHTMX(r) && r.Header.Get("HX-Target") == "scores" {
 		render(w, r, http.StatusOK, views.ScoreTable(v))
@@ -86,8 +87,9 @@ func (h *Handler) player(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, views.PlayerPage(p, v))
 }
 
-// playerMap is the htmx fragment with every play of one map (spec §6.1); it
-// follows merge aliases so old links keep serving the survivor's plays.
+// playerMap is the htmx fragment with every play of one map (spec §6.1),
+// within one session when from/to are given; it follows merge aliases so old
+// links keep serving the survivor's plays.
 func (h *Handler) playerMap(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, _, err := h.svc.ResolvePlayerID(ctx, r.PathValue("id"))
@@ -127,6 +129,7 @@ func scoreFilter(q url.Values, playerID string, reg *platform.Registry) service.
 		}
 	}
 	f.MinScore, f.MaxScore = scoreBound(q.Get("min_score")), scoreBound(q.Get("max_score"))
+	f.From, f.To = timeBound(q.Get("from")), timeBound(q.Get("to"))
 	if types, err := service.ParseTypes(q.Get("type")); err == nil {
 		f.Types = types
 	}
@@ -139,6 +142,15 @@ func scoreBound(s string) *int64 {
 		return nil
 	}
 	return &n
+}
+
+// timeBound reads a from/to bound; anything but RFC 3339 is open.
+func timeBound(s string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t.UTC()
 }
 
 // hasAttempts reports whether a player has any stored attempt.

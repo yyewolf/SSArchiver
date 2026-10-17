@@ -22,7 +22,7 @@ import (
 type PlayerView struct {
 	Player      *model.Player
 	Summary     service.PlayerSummary
-	Groups      service.MapGroupList
+	Sessions    service.SessionList
 	Filter      service.ScoreFilter
 	Platforms   []platform.Platform // the player's platforms, primary first
 	HasAttempts bool                // show the type select
@@ -274,7 +274,7 @@ templ scoreFilters(v PlayerView) {
 
 templ ScoreTable(v PlayerView) {
 	<div id="scores">
-		if len(v.Groups.Groups) == 0 {
+		if len(v.Sessions.Sessions) == 0 {
 			@empty.Empty(empty.Props{Class: "border border-dashed"}) {
 				@empty.Header() {
 					@empty.Title() {
@@ -305,9 +305,12 @@ templ ScoreTable(v PlayerView) {
 						}
 					}
 				@table.Body() {
-					for i, g := range v.Groups.Groups {
-						if g.Latest != nil {
-							@groupRow(v, i, g)
+					for si, sess := range v.Sessions.Sessions {
+						@sessionRow(v, sess)
+						for gi, g := range sess.Groups {
+							if g.Latest != nil {
+								@groupRow(v, sess, fmt.Sprintf("plays-%d-%d", si, gi), g)
+							}
 						}
 					}
 				}
@@ -318,7 +321,26 @@ templ ScoreTable(v PlayerView) {
 	</div>
 }
 
-templ groupRow(v PlayerView, i int, g service.MapGroup) {
+// sessionRow heads one play session's maps.
+templ sessionRow(v PlayerView, sess service.Session) {
+	@table.Row(table.RowProps{Class: "bg-muted/50 hover:bg-muted/50"}) {
+		@table.Cell(table.CellProps{Attributes: templ.Attributes{"colspan": "4"}}) {
+			<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
+				<time class="text-sm font-medium text-foreground" datetime={ sess.Start.Format(time.RFC3339) }>{ SessionSpan(sess.Start, sess.End) }</time>
+				if sess.Duration() >= time.Minute {
+					<span>· { HumanDuration(sess.Duration()) }</span>
+				}
+				<span>· { plural(sess.Plays, "play") } on { plural(sess.Maps, "map") }</span>
+				if sess.Continued {
+					<span>· continued</span>
+				}
+				<span class="ml-auto">{ TimeAgo(sess.End, v.Now) }</span>
+			</div>
+		}
+	}
+}
+
+templ groupRow(v PlayerView, sess service.Session, playsID string, g service.MapGroup) {
 	@table.Row() {
 		@table.Cell() {
 			<div class="flex items-center gap-3">
@@ -330,7 +352,7 @@ templ groupRow(v PlayerView, i int, g service.MapGroup) {
 					<span class="block max-w-64 truncate text-xs text-muted-foreground">{ SongAuthor(g.Latest) } · { Mapper(g.Latest) }</span>
 				</span>
 			</div>
-			<div id={ "plays-" + strconv.Itoa(i) } class="empty:hidden"></div>
+			<div id={ playsID } class="empty:hidden"></div>
 		}
 		@table.Cell(table.CellProps{Class: "hidden md:table-cell"}) {
 			@DifficultyBadge(g.Latest)
@@ -345,7 +367,7 @@ templ groupRow(v PlayerView, i int, g service.MapGroup) {
 				}
 				if n := extraPlays(g); n > 0 {
 					@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Attributes: templ.Attributes{
-						"hx-get": MapPlaysURL(v.Player.ID, v.Filter, g.MapKey), "hx-target": "#plays-" + strconv.Itoa(i), "hx-swap": "innerHTML",
+						"hx-get": MapPlaysURL(v.Player.ID, v.Filter, sess, g.MapKey), "hx-target": "#" + playsID, "hx-swap": "innerHTML",
 					}}) {
 						{ morePlaysLabel(n) }
 					}
@@ -375,7 +397,8 @@ type MapPlaysView struct {
 	Now   time.Time
 }
 
-// MapPlays is the "more plays" fragment: every play of one map, newest first.
+// MapPlays is the "more plays" fragment: every play of one map in one
+// session, newest first.
 templ MapPlays(v MapPlaysView) {
 	<ul class="mt-2 flex flex-col gap-1">
 		for _, s := range v.Plays.Items {
@@ -425,12 +448,12 @@ templ ReplayBadge(state string) {
 }
 
 templ pagination(v PlayerView) {
-	if v.Groups.Pages > 1 {
+	if v.Sessions.Pages > 1 {
 		<nav class="mt-4 flex items-center justify-between text-sm" aria-label="Pagination">
-			<span class="text-muted-foreground">Page { strconv.Itoa(v.Groups.Page) } of { strconv.Itoa(v.Groups.Pages) } · { fmt.Sprintf("%s maps", Number(v.Groups.Total)) }</span>
+			<span class="text-muted-foreground">Page { strconv.Itoa(v.Sessions.Page) } of { strconv.Itoa(v.Sessions.Pages) } · { fmt.Sprintf("%s maps", Number(v.Sessions.Total)) }</span>
 			<div class="flex gap-2">
-				@pageButton(v, v.Groups.Page-1, "Previous", v.Groups.Page <= 1)
-				@pageButton(v, v.Groups.Page+1, "Next", v.Groups.Page >= v.Groups.Pages)
+				@pageButton(v, v.Sessions.Page-1, "Previous", v.Sessions.Page <= 1)
+				@pageButton(v, v.Sessions.Page+1, "Next", v.Sessions.Page >= v.Sessions.Pages)
 			</div>
 		</nav>
 	}

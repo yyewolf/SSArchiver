@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/platform"
@@ -51,7 +52,8 @@ func TestURLs(t *testing.T) {
 
 func TestMapPlaysURL(t *testing.T) {
 	f := service.ScoreFilter{Platform: "testplat", MinScore: new(int64(5)), MaxScore: new(int64(900000))}
-	if got := MapPlaysURL("p1", f, "hash501/Standard/9"); got != "/p/p1/map?key=hash501%2FStandard%2F9&max_score=900000&min_score=5&platform=testplat" {
+	sess := service.Session{Start: time.Date(2026, 10, 9, 19, 0, 0, 0, time.UTC), End: time.Date(2026, 10, 9, 20, 15, 30, 602_000_000, time.UTC)}
+	if got := MapPlaysURL("p1", f, sess, "hash501/Standard/9"); got != "/p/p1/map?from=2026-10-09T19%3A00%3A00Z&key=hash501%2FStandard%2F9&max_score=900000&min_score=5&platform=testplat&to=2026-10-09T20%3A15%3A30.602Z" {
 		t.Errorf("MapPlaysURL = %s", got)
 	}
 	if got := PlayerScoresURL("p1", f, 2); got != "/p/p1?max_score=900000&min_score=5&page=2&platform=testplat" {

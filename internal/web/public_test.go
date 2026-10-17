@@ -86,7 +86,8 @@ func TestMergedPlayerPage(t *testing.T) {
 	body := e.do(http.MethodGet, "/p/"+a, nil).Body.String()
 	contains(t, body, `href="/s/1"`, `href="/s/tp/t1"`, "TestPlat", "ScoreSaber", "950,000",
 		`href="/p/ss/1001"`, `href="/p/tp/abc"`, `href="https://tp.example/u/abc"`, "TestPlat profile",
-		"1 more play", `hx-get="/p/`+a+`/map?key=hash501%2FStandard%2F9"`, `hx-target="#plays-0"`,
+		"1 more play", `hx-get="/p/`+a+`/map?from=2026-10-08T11%3A00%3A00Z&amp;key=hash501%2FStandard%2F9&amp;to=2026-10-08T12%3A04%3A00Z"`, `hx-target="#plays-0-0"`,
+		"8 Oct 2026, 11:00–12:04 UTC", "5 plays on 3 maps",
 		"ScoreSaber &amp; TestPlat replays", `name="platform"`, "All platforms", `name="min_score"`, `name="max_score"`)
 	if strings.Count(body, `href="/s/tp/t0"`) != 0 {
 		t.Fatal("non-PB plays are behind 'more plays', not chips")
@@ -111,6 +112,29 @@ func TestPlayerPageMapFragment(t *testing.T) {
 		if rec := e.do(http.MethodGet, p, nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s = %d", p, rec.Code)
 		}
+	}
+}
+
+// A pause over two hours starts a new session: the map is listed in both,
+// and each session's "more plays" fragment keeps to its own plays.
+func TestPlayerPageSessions(t *testing.T) {
+	e := newEnvWith(t, testutil.NewFakePlatform())
+	e.setup()
+	a := e.crossSeed()
+	old := testutil.FakePlay(model.KindScore, "told", "lb-x501", testutil.T0.Add(-4*time.Hour), false)
+	old.Leaderboard.SongHash, old.Leaderboard.GameMode, old.Leaderboard.Difficulty = "hash501", "Standard", 9
+	old.PersonalBest = false
+	testutil.UpsertFake(e.t, e.svc, a, old)
+	body := e.do(http.MethodGet, "/p/"+a, nil).Body.String()
+	contains(t, body, "8 Oct 2026, 11:00–12:04 UTC", "8 Oct 2026, 08:00 UTC", "1 play on 1 map",
+		`href="/s/tp/told"`, `hx-target="#plays-0-0"`)
+	if strings.Count(body, `href="/s/tp/told"`) != 1 || strings.Index(body, "11:00–12:04") > strings.Index(body, "08:00 UTC") {
+		t.Fatal("the old play is a chip of the older session, listed after the newer one")
+	}
+	newer := e.do(http.MethodGet, "/p/"+a+"/map?key=hash501%2FStandard%2F9&from=2026-10-08T11%3A00%3A00Z&to=2026-10-08T12%3A04%3A00Z", nil, htmx("plays-0-0")).Body.String()
+	contains(t, newer, `href="/s/tp/t0"`, `href="/s/tp/t1"`)
+	if strings.Contains(newer, "told") {
+		t.Fatal("the fragment keeps to its session")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yyewolf/ssarchiver/internal/model"
 	"github.com/yyewolf/ssarchiver/internal/service"
@@ -34,6 +35,12 @@ func scoreQuery(f service.ScoreFilter) url.Values {
 	if len(f.Types) > 0 && (len(f.Types) != 1 || f.Types[0] != service.TypeComplete) {
 		q.Set("type", strings.Join(f.Types, ","))
 	}
+	if !f.From.IsZero() {
+		q.Set("from", f.From.UTC().Format(time.RFC3339Nano))
+	}
+	if !f.To.IsZero() {
+		q.Set("to", f.To.UTC().Format(time.RFC3339Nano))
+	}
 	return q
 }
 
@@ -49,8 +56,10 @@ func PlayerScoresURL(playerID string, f service.ScoreFilter, page int) string {
 	return u
 }
 
-// MapPlaysURL is the fragment with every play of one map, filters applied.
-func MapPlaysURL(playerID string, f service.ScoreFilter, mapKey string) string {
+// MapPlaysURL is the fragment with every play of one map in one session,
+// filters applied.
+func MapPlaysURL(playerID string, f service.ScoreFilter, sess service.Session, mapKey string) string {
+	f.From, f.To = sess.Start, sess.End
 	q := scoreQuery(f)
 	q.Set("key", mapKey)
 	return "/p/" + url.PathEscape(playerID) + "/map?" + q.Encode()
