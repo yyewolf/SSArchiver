@@ -1,4 +1,4 @@
-GOLANGCI := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+GOLANGCI := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 LDFLAGS  := -s -w
 
 SHADCN := go run github.com/axadrn/shadcn-templ/v2/cmd/shadcn-templ@v2.0.0-beta.13
