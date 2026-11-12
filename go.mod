@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/Oudwins/tailwind-merge-go v0.2.3
-	github.com/a-h/templ v0.3.1070
+	github.com/a-h/templ v0.3.1100
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/glebarez/sqlite v1.11.0
@@ -21,7 +21,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/a-h/parse v0.0.0-20250122154542-74294addb73e // indirect
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
