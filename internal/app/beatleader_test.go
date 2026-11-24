@@ -29,7 +29,7 @@ func fakeBeatLeader(t *testing.T, public *atomic.Bool) *httptest.Server {
 	set := time.Now().UTC().Add(time.Hour).Unix()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /player/76561198038925092", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"id":"76561198038925092","name":"Yewolf","avatar":"https://cdn.assets.beatleader.xyz/a.png","country":"FR"}`))
+		_, _ = w.Write([]byte(`{"id":"76561198038925092","name":"Yewolf","avatar":"https://cdn.assets.beatleader.com/a.png","country":"FR"}`))
 	})
 	mux.HandleFunc("GET /player/76561198038925092/scores", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"metadata":{"page":1,"itemsPerPage":100,"total":1},"data":[{"id":888,"baseScore":1050,"modifiedScore":1050,

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DefaultBaseURL = "https://api.beatleader.xyz"
+	DefaultBaseURL = "https://api.beatleader.com"
 	ScoresPageSize = 100
 )
 
@@ -29,9 +29,9 @@ type ReplayPrefixes struct {
 }
 
 var DefaultReplayPrefixes = ReplayPrefixes{
-	CDN:     "https://cdn.replays.beatleader.xyz/",
-	Storage: "https://api.beatleader.xyz/replays-storage/",
-	Other:   "https://api.beatleader.xyz/otherreplays/",
+	CDN:     "https://cdn.replays.beatleader.com/",
+	Storage: "https://api.beatleader.com/replays-storage/",
+	Other:   "https://api.beatleader.com/otherreplays/",
 }
 
 var (

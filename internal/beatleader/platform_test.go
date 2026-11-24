@@ -55,7 +55,7 @@ func (f *fakeAPI) Replay(_ context.Context, u string) (io.ReadCloser, error) {
 
 // ReplayAllowed of the fake only knows the CDN, so replays-storage URLs count as refused.
 func (f *fakeAPI) ReplayAllowed(u string) bool {
-	return strings.HasPrefix(u, "https://cdn.replays.beatleader.xyz/")
+	return strings.HasPrefix(u, "https://cdn.replays.beatleader.com/")
 }
 
 func TestPlaysConversion(t *testing.T) {
@@ -69,7 +69,7 @@ func TestPlaysConversion(t *testing.T) {
 		p.Rank != 1736 || p.ModifiedScore != 825292 || p.UnmodifiedScore != 825292 || p.Accuracy != 0.797295 ||
 		p.MissedNotes != 16 || p.BadCuts != 13 || p.MaxCombo != 423 || p.HMD != "Quest 2" || p.Profile != nil ||
 		!p.SetAt.Equal(time.Date(2024, 1, 27, 11, 59, 48, 0, time.UTC)) ||
-		!p.HasReplay || !strings.HasPrefix(p.ReplayURL, "https://cdn.replays.beatleader.xyz/12164051-") {
+		!p.HasReplay || !strings.HasPrefix(p.ReplayURL, "https://cdn.replays.beatleader.com/12164051-") {
 		t.Fatalf("play = %+v", p)
 	}
 	if lb.ExternalID != "1d3f5x71" || lb.Status != "RANKED" || lb.Stars != 7.2064004 || lb.Difficulty != 7 ||
@@ -82,7 +82,7 @@ func TestPlaysConversion(t *testing.T) {
 	if platform.MapKey(lb.SongHash, lb.GameMode, lb.Difficulty) != platform.MapKey("57511EE48555E00E031BD3B1DF90BA7BE5712B56", "SoloStandard", 7) {
 		t.Fatal("map keys must match across platforms")
 	}
-	if q := plays[1]; !q.HasReplay || !strings.HasPrefix(q.ReplayURL, "https://api.beatleader.xyz/replays-storage/") ||
+	if q := plays[1]; !q.HasReplay || !strings.HasPrefix(q.ReplayURL, "https://api.beatleader.com/replays-storage/") ||
 		q.Leaderboard.Stars != 0 || q.Leaderboard.Status != "UNRANKED" {
 		t.Fatalf("replays-storage play = %+v", q)
 	}
@@ -127,14 +127,14 @@ func TestFeedPage(t *testing.T) {
 
 func TestResolveAndReplay(t *testing.T) {
 	ctx := context.Background()
-	api := &fakeAPI{player: beatleader.Player{ID: "76561198038925092", Name: "Yewolf", Avatar: "https://cdn.assets.beatleader.xyz/a.png", Country: "FR"}}
+	api := &fakeAPI{player: beatleader.Player{ID: "76561198038925092", Name: "Yewolf", Avatar: "https://cdn.assets.beatleader.com/a.png", Country: "FR"}}
 	a := beatleader.NewPlatform(api, nil, nil).Adapter
 	prof, err := a.Resolve(ctx, "alias-or-id")
-	if err != nil || prof != (platform.Profile{ExternalID: "76561198038925092", Name: "Yewolf", AvatarURL: "https://cdn.assets.beatleader.xyz/a.png", Country: "FR"}) {
+	if err != nil || prof != (platform.Profile{ExternalID: "76561198038925092", Name: "Yewolf", AvatarURL: "https://cdn.assets.beatleader.com/a.png", Country: "FR"}) {
 		t.Fatalf("profile = %+v %v", prof, err)
 	}
-	rc, err := a.Replay(ctx, platform.ReplayRef{Kind: model.KindScore, ExternalID: "1", URL: "https://cdn.replays.beatleader.xyz/1.bsor"})
-	if err != nil || api.replayURL != "https://cdn.replays.beatleader.xyz/1.bsor" {
+	rc, err := a.Replay(ctx, platform.ReplayRef{Kind: model.KindScore, ExternalID: "1", URL: "https://cdn.replays.beatleader.com/1.bsor"})
+	if err != nil || api.replayURL != "https://cdn.replays.beatleader.com/1.bsor" {
 		t.Fatalf("replay = %v %q", err, api.replayURL)
 	}
 	_ = rc.Close()
@@ -218,10 +218,10 @@ func TestAttemptPlays(t *testing.T) {
 	q := plays[0]
 	if q.Kind != model.KindAttempt || q.PersonalBest || q.EndTime == nil || *q.EndTime != 22.91243 ||
 		!q.SetAt.Equal(time.Date(2026, 10, 4, 21, 27, 37, 0, time.UTC)) || !q.HasReplay ||
-		!strings.HasPrefix(q.ReplayURL, "https://api.beatleader.xyz/otherreplays/") || q.Leaderboard.ExternalID != "51e10x91" {
+		!strings.HasPrefix(q.ReplayURL, "https://api.beatleader.com/otherreplays/") || q.Leaderboard.ExternalID != "51e10x91" {
 		t.Fatalf("quit = %+v", q)
 	}
-	if clear := plays[2]; !clear.HasReplay || clear.ReplayURL != "https://api.beatleader.xyz/otherreplays/34897106.bsor" {
+	if clear := plays[2]; !clear.HasReplay || clear.ReplayURL != "https://api.beatleader.com/otherreplays/34897106.bsor" {
 		t.Fatalf("a non-PB clear is kept with its replay: %+v", clear)
 	}
 	if pr := plays[3]; pr.ModifiedScore != 38645 || pr.UnmodifiedScore != 193229 || pr.Mods != "SS,NF" {

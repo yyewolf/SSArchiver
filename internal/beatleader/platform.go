@@ -55,7 +55,7 @@ func NewPlatform(api API, apiL, cdnL *Limiter) platform.Platform {
 	return platform.Platform{
 		Name: Name, Slug: "bl", DisplayName: "BeatLeader", Priority: 10, PBOnly: true, BSOR: true, ReplayExt: ".bsor",
 		ImageHosts: []string{
-			"https://cdn.assets.beatleader.xyz", "https://cdn.beatsaver.com", "https://*.cdn.beatsaver.com",
+			"https://cdn.assets.beatleader.com", "https://cdn.beatsaver.com", "https://*.cdn.beatsaver.com",
 			"https://avatars.akamai.steamstatic.com", "https://avatars.steamstatic.com",
 		},
 		ProfileURL: func(id string) string { return "https://beatleader.com/u/" + id },

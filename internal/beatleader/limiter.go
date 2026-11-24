@@ -33,11 +33,11 @@ type Limiter struct {
 	waitUntil       time.Time
 }
 
-// NewAPILimiter limits api.beatleader.xyz: 40 requests per 10 s, headroom
+// NewAPILimiter limits api.beatleader.com: 40 requests per 10 s, headroom
 // under the 50 observed.
 func NewAPILimiter() *Limiter { return newLimiter(APILimiterName, 40) }
 
-// NewCDNLimiter limits cdn.replays.beatleader.xyz downloads: 20 per 10 s.
+// NewCDNLimiter limits cdn.replays.beatleader.com downloads: 20 per 10 s.
 func NewCDNLimiter() *Limiter { return newLimiter(CDNLimiterName, 20) }
 
 func newLimiter(name string, limit int) *Limiter {

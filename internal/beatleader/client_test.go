@@ -178,7 +178,7 @@ func TestReplayAllowlist(t *testing.T) {
 		e.srv.URL + "/elsewhere/x.bsor",
 		e.srv.URL + "/cdn-replays/../player/1",
 		"https://evil.example/cdn-replays/x.bsor",
-		"https://cdn.replays.beatleader.xyz.evil.example/x.bsor",
+		"https://cdn.replays.beatleader.com.evil.example/x.bsor",
 		"",
 	} {
 		if _, err := read(u); !errors.Is(err, beatleader.ErrReplayURL) {
@@ -228,10 +228,10 @@ func TestAttempts(t *testing.T) {
 func TestScoreReplay(t *testing.T) {
 	c := beatleader.NewClient(nil, nil)
 	for u, want := range map[string]bool{
-		"https://cdn.replays.beatleader.xyz/1-2-Expert-Standard-ABC.bsor":     true,
-		"https://api.beatleader.xyz/replays-storage/1-2-Expert-Standard.bsor": true,
-		"https://api.beatleader.xyz/otherreplays/34897106.bsor":               false,
-		"https://evil.example/cdn.replays.beatleader.xyz/1.bsor":              false,
+		"https://cdn.replays.beatleader.com/1-2-Expert-Standard-ABC.bsor":     true,
+		"https://api.beatleader.com/replays-storage/1-2-Expert-Standard.bsor": true,
+		"https://api.beatleader.com/otherreplays/34897106.bsor":               false,
+		"https://evil.example/cdn.replays.beatleader.com/1.bsor":              false,
 	} {
 		if c.ScoreReplay(u) != want {
 			t.Errorf("ScoreReplay(%s) = %v", u, !want)
@@ -242,12 +242,12 @@ func TestScoreReplay(t *testing.T) {
 func TestDefaultAllowlist(t *testing.T) {
 	c := beatleader.NewClient(nil, nil)
 	for u, want := range map[string]bool{
-		"https://cdn.replays.beatleader.xyz/1-2-Expert-Standard-ABC.bsor":     true,
-		"https://api.beatleader.xyz/replays-storage/1-2-Expert-Standard.bsor": true,
-		"https://api.beatleader.xyz/otherreplays/34897106.bsor":               true,
-		"https://api.beatleader.xyz/player/1":                                 false,
-		"http://cdn.replays.beatleader.xyz/1.bsor":                            false,
-		"https://cdn.replays.beatleader.xyz.evil.example/1.bsor":              false,
+		"https://cdn.replays.beatleader.com/1-2-Expert-Standard-ABC.bsor":     true,
+		"https://api.beatleader.com/replays-storage/1-2-Expert-Standard.bsor": true,
+		"https://api.beatleader.com/otherreplays/34897106.bsor":               true,
+		"https://api.beatleader.com/player/1":                                 false,
+		"http://cdn.replays.beatleader.com/1.bsor":                            false,
+		"https://cdn.replays.beatleader.com.evil.example/1.bsor":              false,
 	} {
 		if c.ReplayAllowed(u) != want {
 			t.Errorf("ReplayAllowed(%s) = %v", u, !want)
